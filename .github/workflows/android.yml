@@ -63,8 +63,13 @@ jobs:
         if: env.HAS_KEYSTORE == 'true'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"
+          # Tolerate line breaks/spaces from Windows certutil or copy-paste.
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n\t ' | base64 --decode > "$RUNNER_TEMP/upload.keystore"
+          keytool -list -keystore "$RUNNER_TEMP/upload.keystore" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > /dev/null \
+            || { echo "::error::The keystore secret or its password/alias is wrong. Re-check the four ANDROID_* secrets (PLAYSTORE.md step 2)."; exit 1; }
           echo "path=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_OUTPUT"
 
       - name: Build signed release AAB (for Google Play)

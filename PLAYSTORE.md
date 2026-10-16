@@ -31,37 +31,57 @@ This test build is for you only. Google Play needs the signed build from step 2.
 
 Google Play only accepts apps signed with your private **upload key**.
 
-**Keep the keystore file and its passwords safe.** You need the same key for every future update.
+You need the same key for every future update, so **keep the key file and its password safe.** Save a copy on a USB drive or in your Google Drive.
 
-Run this on any computer with Java (it comes with Android Studio):
+### On Windows (Command Prompt)
+
+Open **Command Prompt** (Start → type `cmd`). Type or paste each command below **as one line**, then press Enter.
+
+**1. Go to your Documents folder:**
+
+```
+cd %USERPROFILE%\Documents
+```
+
+**2. Create the key.** It asks for a password (at least 6 characters; nothing appears while you type), your name, your organisation and so on. Type `yes` at the end.
+
+```
+keytool -genkeypair -v -keystore pundo-upload.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+**3. Turn the key file into text for GitHub:**
+
+```
+certutil -encodehex -f pundo-upload.keystore pundo-upload.txt 0x40000001
+```
+
+**4. Open the text:**
+
+```
+notepad pundo-upload.txt
+```
+
+Press **Ctrl+A**, then **Ctrl+C**, to copy all of it.
+
+### On macOS / Linux (Terminal)
 
 ```bash
-keytool -genkeypair -v -keystore upload.keystore -alias upload \
-  -keyalg RSA -keysize 2048 -validity 10000
+keytool -genkeypair -v -keystore pundo-upload.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
+base64 -i pundo-upload.keystore | tr -d '\n' > pundo-upload.txt
 ```
 
-It asks for a password and your name or organisation. Then turn the file into text for GitHub:
+### Add the key to GitHub
 
-```bash
-# macOS / Linux
-base64 -i upload.keystore | tr -d '\n' > upload.keystore.txt
-```
+In the GitHub repository, open **Settings → Secrets and variables → Actions**. Click **New repository secret** four times:
 
-```powershell
-# Windows PowerShell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("upload.keystore")) | Out-File upload.keystore.txt
-```
-
-In the GitHub repository, go to **Settings → Secrets and variables → Actions → New repository secret** and add:
-
-| Secret | Value |
+| Name | Secret |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | the contents of `upload.keystore.txt` |
-| `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
+| `ANDROID_KEYSTORE_BASE64` | paste the text you copied from `pundo-upload.txt` |
+| `ANDROID_KEYSTORE_PASSWORD` | the password you typed in step 2 |
 | `ANDROID_KEY_ALIAS` | `upload` |
-| `ANDROID_KEY_PASSWORD` | the key password (the same as the keystore password unless you chose a different one) |
+| `ANDROID_KEY_PASSWORD` | the same password again |
 
-Never commit `upload.keystore` to the repository; `.gitignore` already blocks it.
+Never upload `pundo-upload.keystore` itself to the repository; `.gitignore` already blocks it.
 
 ## 3. Build the Play Store bundle
 
