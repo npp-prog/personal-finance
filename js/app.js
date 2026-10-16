@@ -242,8 +242,8 @@
     const kpis =
       '<div class="kpis">' +
       kpi('Net worth', bs.netWorth, 'Assets − liabilities', true) +
-      kpi('Cash (bank, debit, cash)', bs.totals.cash, countOf('cash') + ' accounts') +
-      kpi('Investments', bs.totals.investments, countOf('investment') + ' accounts') +
+      kpi('Cash (bank, debit, cash)', bs.totals.cash, countOf('cash')) +
+      kpi('Investments', bs.totals.investments, countOf('investment')) +
       kpi('Other assets', bs.totals.otherAssets + bs.totals.receivables, 'Property, vehicles, receivables') +
       kpi('Liabilities', bs.totals.liabilities, money(bs.totals.creditCards) + ' on credit cards') +
       '</div>';
@@ -268,7 +268,7 @@
       series.map((p) => '<tr><td>' + fmtDate(p.date) + '</td><td class="num">' + money(p.assets) + '</td><td class="num">' + money(p.liabilities) + '</td><td class="num">' + money(p.netWorth) + '</td></tr>').join('') +
       '</tbody></table></div></details></div>';
 
-    const topExp = is.expenses.slice().sort((a, b) => b.amount - a.amount).slice(0, 7);
+    const topExp = is.expenses.filter((r) => r.amount > 0).sort((a, b) => b.amount - a.amount).slice(0, 7);
     const maxExp = topExp.length ? topExp[0].amount : 0;
     const spend = '<div class="card"><h2>Top spending this month</h2>' + (topExp.length
       ? '<div class="bar-list">' + topExp.map((r) =>
@@ -318,7 +318,7 @@
       return '<div class="kpi' + (hero ? ' hero' : '') + '"><div class="label">' + esc(label) + '</div><div class="value">' +
         money(cents) + '</div>' + (hint ? '<div class="hint">' + esc(hint) + '</div>' : '') + '</div>';
     }
-    function countOf(cls) { return activeAccounts((a) => L.classify(a) === cls).length; }
+    function countOf(cls) { const n = activeAccounts((a) => L.classify(a) === cls).length; return n + (n === 1 ? ' account' : ' accounts'); }
   }
 
   function bindRowLinks(root) {
