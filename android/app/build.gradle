@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "org.mgocandoniaccounting.ledger"
+    namespace = "org.mgocandoniaccounting.pundo"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "org.mgocandoniaccounting.ledger"
+        applicationId "org.mgocandoniaccounting.pundo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // CI sets these from the GitHub run number / tag; every Play upload needs a higher versionCode.

@@ -1,4 +1,4 @@
-# Publishing Personal Ledger on Google Play
+# Publishing Pundo on Google Play
 
 The Android app is this same web app, packaged with [Capacitor](https://capacitorjs.com).
 GitHub Actions builds it for you, so you don't need Android Studio.
@@ -6,7 +6,7 @@ GitHub Actions builds it for you, so you don't need Android Studio.
 | What | Where |
 |---|---|
 | Android project | `android/` |
-| App ID (package name) | `org.mgocandoniaccounting.ledger` in `capacitor.config.json` and `android/app/build.gradle` |
+| App ID (package name) | `org.mgocandoniaccounting.pundo` in `capacitor.config.json` and `android/app/build.gradle` |
 | Build workflow | `.github/workflows/android.yml` |
 | Store texts & graphics | `store/` |
 | Privacy policy | `privacy.html` |
@@ -14,14 +14,14 @@ GitHub Actions builds it for you, so you don't need Android Studio.
 > **Decide the App ID now.** Google Play never lets you change it after the first upload.
 > To use a different one, change it in `capacitor.config.json` and in `android/app/build.gradle`
 > (`namespace` and `applicationId`), and move the Java folder
-> `android/app/src/main/java/org/mgocandoniaccounting/ledger` to match.
+> `android/app/src/main/java/org/mgocandoniaccounting/pundo` to match.
 
 ---
 
 ## 1. Test the app on your phone or tablet (no signing needed)
 
 1. On GitHub, open **Actions → Android build**. It runs on every push; you can also click **Run workflow**.
-2. When it finishes (about 5 minutes), open the run and download the **personal-ledger-debug-apk** artifact.
+2. When it finishes (about 5 minutes), open the run and download the **pundo-debug-apk** artifact.
 3. Unzip it, copy the `.apk` to your Android device and open it.
 4. Allow "Install unknown apps" for your file manager when Android asks.
 
@@ -67,7 +67,7 @@ Never commit `upload.keystore` to the repository; `.gitignore` already blocks it
 
 1. Go to **Actions → Android build → Run workflow**.
 2. Optionally type a version name, e.g. `1.0.0`.
-3. Download the **personal-ledger-release-aab** artifact. It contains the `.aab` file you upload to Google Play.
+3. Download the **pundo-release-aab** artifact. It contains the `.aab` file you upload to Google Play.
 
 Every run gets a higher version code automatically, which Play requires for each update.
 
@@ -88,7 +88,7 @@ As a bonus, GitHub Pages also hosts the web version of the app at `.../personal-
 ## 5. Set up Google Play Console
 
 1. **Developer account:** sign up at <https://play.google.com/console>. It costs a one-time USD 25, and Google verifies your identity.
-2. **Create app:** name *Personal Ledger*, language English, type *App*, *Free*.
+2. **Create app:** name *Pundo*, language English, type *App*, *Free*.
 3. **App content** (left menu → *Policy and programs → App content*):
 
    | Section | What to enter |
@@ -98,7 +98,7 @@ As a bonus, GitHub Pages also hosts the web version of the app at `.../personal-
    | App access | All functionality is available without special access |
    | Content rating | Complete the questionnaire. It's a utility with no user content, which normally rates *Everyone* |
    | Target audience | 18 and over |
-   | Data safety | No data collected, no data shared. Everything is stored on the device; there are no servers or analytics |
+   | Data safety | No data collected, no data shared. Everything is stored on the device; there are no servers or analytics. Android's own backup to the user's Google account doesn't count as collection by you. You may tick *"Data is backed up with Android backup"* where the form offers it |
    | Financial features | A personal finance tracking and budgeting tool only. No loans, payments, banking or crypto exchange |
    | Government apps | No |
 
@@ -136,4 +136,4 @@ npm run android:open    # opens Android Studio → Build → Generate Signed App
 | Back button | Closes an open dialog or menu, goes back a page, and exits from the Dashboard |
 | Export backup, Export CSV | Open Android's share sheet, so you can save to Files or Drive, or email the file |
 | Print / PDF | Shares the report as a page. Open it in Chrome, which offers to print or **Save as PDF** |
-| Data | Stored on the device inside the app. Uninstalling the app or clearing its storage deletes it, so export backups regularly |
+| Data | Stored on the device inside the app, plus an automatic backup copy that Android saves to the user's Google account and restores on a new phone. **Back up now** gives you a file to keep yourself |

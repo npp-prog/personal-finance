@@ -40,6 +40,7 @@
     book.updatedAt = new Date().toISOString();
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(book)); }
     catch (e) { toast('Could not save to browser storage — export a backup from Settings.'); }
+    scheduleAutoBackup();
   }
 
   // ---------------------------------------------------------------------------
@@ -53,28 +54,79 @@
 
   async function backupNow() {
     const stamp = new Date();
-    const name = 'ledger-backup-' + today() + '-' + String(stamp.getHours()).padStart(2, '0') + String(stamp.getMinutes()).padStart(2, '0') + '.json';
-    const payload = Object.assign({}, book, { backupCreatedAt: stamp.toISOString(), app: 'Personal Ledger' });
+    const name = 'pundo-backup-' + today() + '-' + String(stamp.getHours()).padStart(2, '0') + String(stamp.getMinutes()).padStart(2, '0') + '.json';
+    const payload = Object.assign({}, book, { backupCreatedAt: stamp.toISOString(), app: 'Pundo' });
     await saveFile(name, JSON.stringify(payload, null, 2), 'application/json');
     try { localStorage.setItem(BACKUP_KEY, stamp.toISOString()); } catch (e) { /* ignore */ }
     toast('Backup saved — keep the file somewhere safe (Drive, Files, email)');
     rerender();
   }
 
-  /** True when there is unbacked-up work: never backed up, or changed since a backup that is a week old. */
+  /**
+   * True when there is unbacked-up work: never backed up, or changed since a backup that is a week old.
+   * In the Android app the automatic backup covers day-to-day safety, so the reminder waits a month.
+   */
   function backupDue() {
     if (!book.entries.length) return false;
     const last = lastBackupAt();
-    if (!last) return true;
+    if (!last) return !Native;
     const changed = book.updatedAt && book.updatedAt > last;
-    return changed && (Date.now() - new Date(last).getTime()) > BACKUP_REMIND_DAYS * 86400000;
+    const days = Native ? 30 : BACKUP_REMIND_DAYS;
+    return changed && (Date.now() - new Date(last).getTime()) > days * 86400000;
+  }
+
+  // Automatic backup (Android app). Pundo keeps a complete copy of the books in files/pundo/;
+  // Android's backup service copies that folder to the user's Google account (Google Drive)
+  // and restores it on a new phone — see android/app/src/main/res/xml/data_extraction_rules.xml.
+  const AUTO_BACKUP_PATH = 'pundo/auto-backup.json';
+  const AUTO_BACKUP_KEY = 'pf-ledger-auto-backup-v1';
+  let autoBackupTimer = null;
+
+  function scheduleAutoBackup() {
+    if (typeof Native === 'undefined' || !Native || !Native.Filesystem) return;
+    clearTimeout(autoBackupTimer);
+    autoBackupTimer = setTimeout(writeAutoBackup, 1500);
+  }
+
+  async function writeAutoBackup() {
+    try {
+      const at = new Date().toISOString();
+      await Native.Filesystem.writeFile({
+        path: AUTO_BACKUP_PATH, directory: 'DATA', encoding: 'utf8', recursive: true,
+        data: JSON.stringify(Object.assign({}, book, { backupCreatedAt: at, app: 'Pundo' })),
+      });
+      localStorage.setItem(AUTO_BACKUP_KEY, at);
+    } catch (e) { /* storage full or unavailable: manual backups still work */ }
+  }
+
+  function lastAutoBackupAt() { try { return localStorage.getItem(AUTO_BACKUP_KEY); } catch (e) { return null; } }
+
+  function hasOwnData(b) {
+    return b.entries.length > 0 || b.accounts.some((a) => (a.type === 'asset' || a.type === 'liability') && a.id !== 'acc_cash');
+  }
+
+  /** On a fresh install (e.g. a new phone), offer to restore the copy Android brought back from Google. */
+  async function checkAutoRestore() {
+    if (!Native || !Native.Filesystem) return;
+    if (hasOwnData(book)) { if (!lastAutoBackupAt()) scheduleAutoBackup(); return; }
+    let b;
+    try {
+      const r = await Native.Filesystem.readFile({ path: AUTO_BACKUP_PATH, directory: 'DATA', encoding: 'utf8' });
+      b = JSON.parse(r.data);
+    } catch (e) { return; }
+    if (!b || !Array.isArray(b.accounts) || !Array.isArray(b.entries) || !hasOwnData(b)) return;
+    const when = b.backupCreatedAt ? new Date(b.backupCreatedAt).toLocaleString() : 'an earlier date';
+    if (!confirm('Welcome back! Pundo found your automatic backup from ' + when + ' (' + b.entries.length + ' entries).\n\nRestore it now?')) return;
+    delete b.backupCreatedAt; delete b.app;
+    b.people = b.people || [];
+    book = b; commit(); toast('Your data was restored from the automatic backup');
   }
 
   function restoreBackup(file) {
     return file.text().then((text) => {
       let b;
       try { b = JSON.parse(text); } catch (e) { throw new Error('This file is not a backup (it is not valid JSON).'); }
-      if (!b || !Array.isArray(b.accounts) || !Array.isArray(b.entries)) throw new Error('This file is not a Personal Ledger backup.');
+      if (!b || !Array.isArray(b.accounts) || !Array.isArray(b.entries)) throw new Error('This file is not a Pundo backup.');
       b.people = b.people || [];
       const when = b.backupCreatedAt ? new Date(b.backupCreatedAt).toLocaleString() : 'unknown date';
       const realAccounts = b.accounts.filter((a) => (a.type === 'asset' || a.type === 'liability') && !a.personId).length;
@@ -323,7 +375,7 @@
     const tabFor = { dashboard: 'dashboard', register: 'register', people: 'people', statements: 'reports', ledger: 'reports' };
     $$('.tabbar [data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === (tabFor[r.name] || 'menu')));
     const navLink = $('.nav a[data-route="' + r.name + '"]');
-    $('#bar-title').textContent = navLink ? navLink.textContent.trim() : 'Ledger';
+    $('#bar-title').textContent = navLink ? navLink.textContent.trim() : 'Pundo';
     $('#app').classList.remove('nav-open');
     routes[r.name](r.params);
   }
@@ -1873,6 +1925,9 @@
       '<div class="btn-row"><button id="s-export" class="primary">Back up now</button>' +
       '<label class="btn">Restore from backup<input type="file" id="s-import" accept=".json,application/json" class="hidden"></label>' +
       '<button id="s-csv">Export transactions (CSV)</button></div>' +
+      '<div class="auto-backup">' + (Native
+        ? '<h3 style="margin-top:14px">Automatic backup to Google · <span class="badge cash">On</span></h3><p class="small muted">Pundo saves a backup copy after every change' + (lastAutoBackupAt() ? ' (last: <b>' + new Date(lastAutoBackupAt()).toLocaleString() + '</b>)' : '') + '. Android copies it to your Google account about once a day while the phone is charging and on Wi-Fi, and restores it when you install Pundo on a new phone. Make sure it is turned on in <b>Phone Settings → Google → Backup</b>.</p>'
+        : '<h3 style="margin-top:14px">Automatic backup</h3><p class="small muted">In the Pundo Android app your data is backed up automatically to your Google account. In a browser, use <b>Back up now</b> and keep the file in Google Drive.</p>') + '</div>' +
       '<p class="small muted" style="margin-top:10px">Last backup: <b>' + (lastBackupAt() ? new Date(lastBackupAt()).toLocaleString() : 'never') + '</b> · ' + book.accounts.filter((a) => (a.type === 'asset' || a.type === 'liability') && !a.personId).length + ' accounts &amp; cards · ' + book.entries.length + ' entries</p></div>' +
       '<div class="card"><h2>Sample data</h2><p class="small muted">Loads demo accounts, cards, people and three months of transactions so you can explore every report. <b>Replaces your current data</b> — back up first.</p><button id="s-sample">Load sample data</button></div>' +
       '<div class="card"><h2>Reset</h2><p class="small muted">Erase all accounts and transactions on this device.</p><button class="danger" id="s-reset">Erase everything</button></div>' +
@@ -1897,7 +1952,7 @@
         const a = acct(l.accountId) || {};
         rows.push([e.date, e.id, L.ENTRY_KINDS[e.kind], e.description, a.name, a.type, (l.debit / 100).toFixed(2), (l.credit / 100).toFixed(2), e.memo || '']);
       }
-      download('ledger-transactions-' + today() + '.csv', rows.map((r) => r.map((c) => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv');
+      download('pundo-transactions-' + today() + '.csv', rows.map((r) => r.map((c) => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv');
     };
     $('#s-sample').onclick = () => {
       if (book.entries.length && !confirm('Replace ALL your current data with sample data? This cannot be undone — export a backup first.')) return;
@@ -2046,4 +2101,5 @@
 
   applyTheme();
   render();
+  checkAutoRestore();
 })();

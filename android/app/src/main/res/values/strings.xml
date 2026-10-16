@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Personal Ledger</string>
-    <string name="title_activity_main">Personal Ledger</string>
-    <string name="package_name">org.mgocandoniaccounting.ledger</string>
-    <string name="custom_url_scheme">org.mgocandoniaccounting.ledger</string>
+    <string name="app_name">Pundo</string>
+    <string name="title_activity_main">Pundo</string>
+    <string name="package_name">org.mgocandoniaccounting.pundo</string>
+    <string name="custom_url_scheme">org.mgocandoniaccounting.pundo</string>
 </resources>

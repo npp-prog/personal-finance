@@ -80,23 +80,23 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: personal-ledger-debug-apk-${{ env.VERSION_NAME }}
+          name: pundo-debug-apk-${{ env.VERSION_NAME }}
           path: android/app/build/outputs/apk/debug/*.apk
 
       - name: Upload release AAB
         if: steps.keystore.outputs.path != ''
         uses: actions/upload-artifact@v4
         with:
-          name: personal-ledger-release-aab-${{ env.VERSION_NAME }}
+          name: pundo-release-aab-${{ env.VERSION_NAME }}
           path: android/app/build/outputs/bundle/release/*.aab
 
       - name: Summary
         run: |
           {
-            echo "### Personal Ledger ${VERSION_NAME} (versionCode ${VERSION_CODE})"
-            echo "- Debug APK: download the **personal-ledger-debug-apk** artifact and install it on a device."
+            echo "### Pundo ${VERSION_NAME} (versionCode ${VERSION_CODE})"
+            echo "- Debug APK: download the **pundo-debug-apk** artifact and install it on a device."
             if [ -n "${{ steps.keystore.outputs.path }}" ]; then
-              echo "- Release AAB: download **personal-ledger-release-aab** and upload it in Google Play Console."
+              echo "- Release AAB: download **pundo-release-aab** and upload it in Google Play Console."
             else
               echo "- No signing secrets set, so no Play Store AAB was built. See PLAYSTORE.md, step 2."
             fi

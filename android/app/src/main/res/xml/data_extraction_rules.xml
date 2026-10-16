@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: what Android's automatic backup (to the user's Google account / Google Drive)
+     and phone-to-phone transfer include. Pundo writes a complete JSON copy of the books to
+     files/pundo/ after every change; that file is what gets backed up and restored. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="pundo/" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="pundo/" />
+    </device-transfer>
+</data-extraction-rules>

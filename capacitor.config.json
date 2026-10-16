@@ -1,6 +1,6 @@
 {
-  "appId": "org.mgocandoniaccounting.ledger",
-  "appName": "Personal Ledger",
+  "appId": "org.mgocandoniaccounting.pundo",
+  "appName": "Pundo",
   "webDir": "www",
   "android": {
     "backgroundColor": "#f6f6f4"

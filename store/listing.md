@@ -1,13 +1,13 @@
 # Google Play store listing — copy & paste
 
-**App name** (max 30): `Personal Ledger`
+**App name** (max 30): `Pundo`
 
 **Short description** (max 80):
 `Encode bank & card transactions. P&L, balance sheet, cash flow & who owes you.`
 
 **Full description** (max 4000):
 
-Personal Ledger is a personal finance app built on real double-entry accounting, the same method accountants use. Encode the transactions from your bank and credit card statements, and get proper financial statements for your own money.
+Pundo is a personal finance app built on real double-entry accounting, the same method accountants use. Encode the transactions from your bank and credit card statements, and get proper financial statements for your own money.
 
 ENCODE LIKE A BANK REGISTER
 • Pick a bank account or card and type each statement line: date, ref no., payee, account, payment or deposit
@@ -40,7 +40,8 @@ PERIOD END
 PRIVATE BY DESIGN
 • No account or sign-up required
 • Your data stays on your device: no servers, no ads, no tracking
-• Export a backup file whenever you like
+• Automatic backup to your Google account, restored when you set up a new phone
+• Export a backup file to Google Drive or email whenever you like
 
 Defaults to the Philippine peso (₱); you can switch to any currency.
 

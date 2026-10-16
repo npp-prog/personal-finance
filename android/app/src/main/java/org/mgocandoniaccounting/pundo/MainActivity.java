@@ -1,4 +1,4 @@
-package org.mgocandoniaccounting.ledger;
+package org.mgocandoniaccounting.pundo;
 
 import com.getcapacitor.BridgeActivity;
 
