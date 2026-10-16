@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Personal Finance Ledger</title>
+  <meta name="description" content="Double-entry personal finance: track every card and account, close the books, and produce a P&amp;L, balance sheet and cash flow statement.">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span class="brand-mark">Σ</span>Ledger</div>
+      <nav class="nav">
+        <div class="nav-group">
+          <div class="nav-label">Overview</div>
+          <a href="#/dashboard" data-route="dashboard">Dashboard</a>
+          <a href="#/accounts" data-route="accounts">Accounts &amp; cards</a>
+          <a href="#/transactions" data-route="transactions">Transactions</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Accounting cycle</div>
+          <a href="#/journal" data-route="journal"><span class="step">1</span>General journal</a>
+          <a href="#/ledger" data-route="ledger"><span class="step">2</span>General ledger</a>
+          <a href="#/trial" data-route="trial"><span class="step">3</span>Trial balance</a>
+          <a href="#/adjust" data-route="adjust"><span class="step">4</span>Adjustments</a>
+          <a href="#/statements" data-route="statements"><span class="step">5</span>Financial statements</a>
+          <a href="#/close" data-route="close"><span class="step">6</span>Close the period</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Data</div>
+          <a href="#/settings" data-route="settings">Settings &amp; backup</a>
+        </div>
+      </nav>
+    </aside>
+    <div>
+      <div class="mobile-bar">
+        <button id="nav-toggle" aria-label="Open menu">☰</button>
+        <span>Ledger</span>
+      </div>
+      <main class="main" id="main"></main>
+    </div>
+  </div>
+  <dialog id="dialog"></dialog>
+  <script src="js/ledger.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
