@@ -258,6 +258,7 @@
       date: entry.date,
       description: (entry.description || '').trim(),
       memo: (entry.memo || '').trim(),
+      ref: (entry.ref || '').trim() || undefined,
       kind: entry.kind || 'journal',
       lines: entry.lines
         .filter((l) => (l.debit || 0) || (l.credit || 0))
@@ -311,7 +312,7 @@
    * direction 'out': money leaves `accountId` toward `counterId` (Dr counter, Cr account)
    * direction 'in' : money arrives in `accountId` from `counterId` (Dr account, Cr counter)
    */
-  function simpleEntry(book, { id, date, description, memo, accountId, counterId, direction, amount }) {
+  function simpleEntry(book, { id, date, description, memo, ref, accountId, counterId, direction, amount }) {
     const amt = Math.abs(amount);
     const debitId = direction === 'in' ? accountId : counterId;
     const creditId = direction === 'in' ? counterId : accountId;
@@ -322,7 +323,7 @@
     else if (counter && counter.type === 'income') kind = 'income';
     else if (counter && counter.type === 'equity') kind = self && self.type === 'equity' ? 'journal' : 'opening';
     return {
-      id, date, description, memo, kind,
+      id, date, description, memo, ref, kind,
       lines: [
         { accountId: debitId, debit: amt, credit: 0 },
         { accountId: creditId, debit: 0, credit: amt },

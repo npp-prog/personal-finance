@@ -27,15 +27,32 @@ To explore with demo data, go to **Settings & backup → Load sample data**.
 
 Each new account can have an opening balance, which is posted against *Opening Balance Equity*. Your **net worth** is assets minus liabilities, and it always equals total equity.
 
-## Recording transactions
+## Encoding your bank and card statements (Bank register)
 
-* **Money out / spend**: e.g. groceries on your Visa. *Dr Groceries, Cr Visa*, so the card balance owed goes up.
-* **Money in / refund**: e.g. a paycheck into checking. *Dr Checking, Cr Salary*.
-* **Transfer / payment**: between any two balance-sheet accounts. This covers paying a credit card, moving money to savings, buying investments, a loan payment or an ATM withdrawal.
-* **Split / journal entry**: any number of debit and credit lines, such as a paycheck with tax deductions or a split purchase.
-* **Import CSV**: bank or card statement exports. You map the columns, choose the sign convention and skip duplicates. Categories are matched by name or by past descriptions.
+Open **Bank register (encode)**, pick a bank account or card from the tiles at the top, and type each statement line into the entry row, much like the QuickBooks Online bank register:
 
-Each account register shows a running balance with plus and minus columns. For credit cards and loans the balance is the amount owed.
+| Date | Ref no. | Payee | Account | Memo | Payment | Deposit | Balance |
+|------|---------|-------|---------|------|---------|---------|---------|
+
+* **Account** can be any account. Pick the side of the entry that isn't the bank:
+  * an **expense** (Groceries, Rent);
+  * an **income** (Salary);
+  * another **bank** (a transfer);
+  * a **credit card** (paying the card);
+  * a **loan** (a loan payment);
+  * an **investment or other asset** (buying shares, putting a down payment on a car);
+  * **equity**.
+* If you type an account name that doesn't exist yet, the app offers to create it as a new expense or income category.
+* For bank and cash accounts the amount columns are **Payment** (money out) and **Deposit** (money in). On credit cards they are **Charge** and **Payment**. On loans they are **Increase** and **Payment**.
+* **Enter** saves the line and starts the next one. The date is kept so you can encode a whole statement quickly.
+* Typing a payee you've used before fills in its account.
+* **Click any line** to edit it in place. You can also **Delete** it or press **Esc** to cancel.
+* **Split** sends one statement line to several accounts, e.g. a pharmacy receipt that is part Health and part Personal care.
+* **Statement check**: enter the statement date and ending balance. The register tells you whether it matches, or shows the difference you still need to find.
+
+Each line becomes a balanced journal entry. For example, a 1,500 grocery payment from BDO posts *Dr Groceries 1,500 / Cr BDO 1,500*, and paying the Visa from BDO posts *Dr Visa / Cr BDO*.
+
+You can also use **Import CSV** in the register when your bank offers a CSV download. The **All transactions** page lists entries across every account.
 
 ## The accounting cycle
 

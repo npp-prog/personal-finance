@@ -114,6 +114,7 @@ p { margin: 0 0 10px; }
 .nav a:hover { background: var(--surface-2); text-decoration: none; color: var(--text); }
 .nav a.active { background: var(--accent-soft); color: var(--accent); }
 .step { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid currentColor; font-size: 10px; font-weight: 700; flex: none; }
+.app > div { min-width: 0; }
 .main { padding: 24px 28px 60px; min-width: 0; max-width: 1280px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-head .sub { color: var(--text-2); margin-top: 4px; }
@@ -235,6 +236,28 @@ dialog::backdrop { background: rgba(10, 10, 12, .45); }
 .lines-table td { padding: 4px; border: 0; }
 .lines-table input, .lines-table select { width: 100%; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; font-weight: 500; z-index: 100; box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
+
+/* Bank register */
+.acct-strip { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 12px; margin-bottom: 4px; }
+.acct-tile { flex: 0 0 auto; min-width: 170px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; color: var(--text); box-shadow: var(--shadow); }
+.acct-tile:hover { border-color: var(--accent); text-decoration: none; }
+.acct-tile.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.acct-tile .nm { font-weight: 600; white-space: nowrap; }
+.acct-tile .bal { font-variant-numeric: tabular-nums; margin-top: 2px; }
+.acct-tile.add { display: grid; place-items: center; color: var(--accent); border-style: dashed; box-shadow: none; }
+.reg-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.reg-table { table-layout: fixed; }
+.reg-table td { vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reg-table { width: 100%; min-width: 940px; }
+.reg-table tr.r-edit .r-actions { white-space: normal; }
+.reg-table tr.r-edit .r-actions button { margin: 1px; }
+.reg-table tr.r-new td, .reg-table tr.r-edit td { background: var(--accent-soft); padding: 6px 4px; }
+.reg-table tr.r-new input, .reg-table tr.r-edit input { width: 100%; padding: 6px 7px; font-size: 13px; }
+.reg-table input.num { text-align: right; }
+.reg-table .r-actions { white-space: nowrap; text-align: right; }
+.reg-table .r-actions button { padding: 5px 8px; font-size: 12px; margin-left: 2px; }
+.reg-table tr.r-err td { padding: 4px; background: var(--accent-soft); }
+kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--surface-2); }
 
 @media (max-width: 980px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }

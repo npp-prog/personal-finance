@@ -75,6 +75,7 @@
   }
 
   function toast(msg) {
+    $$('.toast').forEach((x) => x.remove());
     const t = document.createElement('div');
     t.className = 'toast';
     t.textContent = msg;
@@ -197,6 +198,7 @@
   const routes = {
     dashboard: renderDashboard,
     accounts: renderAccounts,
+    register: (p) => renderRegister(p.get('account')),
     transactions: renderTransactions,
     journal: renderJournal,
     ledger: renderLedger,
@@ -303,7 +305,7 @@
     main.innerHTML =
       '<div class="page-head"><div><h1>Dashboard</h1><div class="sub">As of ' + fmtDate(t) +
       (L.closedThrough(book) ? ' · Books closed through ' + fmtDate(L.closedThrough(book)) : '') + '</div></div>' +
-      '<div class="btn-row"><button class="primary" id="add-tx">+ Transaction</button><button id="add-acct">+ Account / card</button></div></div>' +
+      '<div class="btn-row"><button id="add-tx">+ Quick transaction</button><button id="add-acct">+ Account / card</button><a class="btn primary" href="#/register">Encode bank transactions</a></div></div>' +
       (hasAccounts ? '' : '<div class="notice warn">Start by adding your bank accounts, debit and credit cards, investments and other assets — or <a href="#/settings">load sample data</a> to explore.</div>') +
       kpis +
       '<div class="grid grid-2"><div>' + chart + month + '</div><div>' + accountsCard + spend + '</div></div>' +
@@ -531,6 +533,7 @@
   function renderTransactions(params) {
     const accountId = params.get('account') || '';
     const a = accountId ? acct(accountId) : null;
+    if (a && isBalanceSheet(a)) { location.replace('#/register?account=' + a.id); return; }
     const pt = periodToolbar(txState, rerender);
     const r = pt.range;
     const q = txState.search.toLowerCase();
@@ -734,6 +737,277 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Bank register — QBO-style inline encoding, one line per statement entry
+  // ---------------------------------------------------------------------------
+
+  const regState = { accountId: null, editing: null, lastDate: null, search: '', error: '', errorRow: null, stmtDate: '', stmtBal: '' };
+
+  /** Name shown (and typed) in the account picker; last4 keeps same-named cards apart. */
+  function displayName(a) { return a.name + (a.last4 ? ' ••' + a.last4 : ''); }
+
+  function typeLabel(a) {
+    if (a.type === 'income') return 'Income';
+    if (a.type === 'expense') return 'Expense';
+    if (a.type === 'equity') return 'Equity';
+    return CLASS_LABEL[L.classify(a)] + ' · ' + (a.type === 'asset' ? 'Asset' : 'Liability');
+  }
+
+  function findByDisplayName(name) {
+    const n = String(name || '').trim().toLowerCase();
+    if (!n) return null;
+    const list = book.accounts.filter((a) => !a.archived);
+    return list.find((a) => displayName(a).toLowerCase() === n) || list.find((a) => a.name.toLowerCase() === n) || null;
+  }
+
+  /** payee (lower) -> last account used with it, from any register. */
+  function buildPayeeMemory() {
+    const m = {};
+    for (const e of L.sortedEntries(book.entries)) {
+      if (!e.description || e.lines.length !== 2 || ['closing', 'opening', 'adjusting'].includes(e.kind)) continue;
+      const key = e.description.trim().toLowerCase();
+      const cat = e.lines.find((l) => { const a = acct(l.accountId); return a && !a.system && (a.type === 'income' || a.type === 'expense'); });
+      m[key] = m[key] || {};
+      // Per register: the other side of the entry. "any": the category, for registers never used with this payee.
+      m[key][e.lines[0].accountId] = e.lines[1].accountId;
+      m[key][e.lines[1].accountId] = e.lines[0].accountId;
+      if (cat) m[key].any = cat.accountId;
+    }
+    return m;
+  }
+
+  function columnLabels(a) {
+    if (a.type === 'liability') {
+      return L.classify(a) === 'credit_card'
+        ? { out: 'Charge', in: 'Payment', outHint: 'Purchases, fees, interest (balance owed goes up)', inHint: 'Payments, refunds, credits (balance owed goes down)' }
+        : { out: 'Increase', in: 'Payment', outHint: 'New borrowing, interest added', inHint: 'Payments made on this loan' };
+    }
+    return { out: 'Payment', in: 'Deposit', outHint: 'Money out: purchases, withdrawals, transfers out', inHint: 'Money in: salary, deposits, transfers in' };
+  }
+
+  function renderRegister(accountId) {
+    const bsAccounts = activeAccounts(isBalanceSheet);
+    const a = acct(accountId || regState.accountId || prefs.lastRegister) && isBalanceSheet(acct(accountId || regState.accountId || prefs.lastRegister))
+      ? acct(accountId || regState.accountId || prefs.lastRegister)
+      : bsAccounts.find((x) => L.classify(x) === 'cash' && x.id !== 'acc_cash') || bsAccounts[0];
+    if (!a) { main.innerHTML = '<div class="card empty">Add a bank account or card first.</div>'; return; }
+    if (regState.accountId !== a.id) {
+      Object.assign(regState, { accountId: a.id, editing: null, error: '', draft: null, stmtDate: '', stmtBal: '' });
+    }
+    prefs.lastRegister = a.id; savePrefs();
+
+    const cols = columnLabels(a);
+    // Register deltas are in natural sign (a card charge is +). Flip liabilities so
+    // the left column is always money out / charges and the right is money in / payments.
+    const flow = (delta) => (a.type === 'liability' ? -delta : delta);
+    const t = today();
+    const bals = L.balances(book, { to: '9999-12-31' });
+    const closed = L.closedThrough(book);
+    const rows = L.register(book, a.id);
+    const q = regState.search.toLowerCase();
+    const shown = rows.slice().reverse().filter((r) => !q ||
+      [r.entry.description, r.entry.memo, r.entry.ref, ...r.counterIds.map(acctName), String(Math.abs(r.delta) / 100)].join(' ').toLowerCase().includes(q));
+
+    const others = L.orderAccounts(book.accounts).filter((x) => !x.archived && x.id !== a.id);
+    const payees = Array.from(new Set(book.entries.map((e) => (e.description || '').trim()).filter(Boolean))).sort();
+
+    // Strip of account tiles (QBO-style bank cards).
+    const strip = '<div class="acct-strip">' + bsAccounts.map((x) =>
+      '<a href="#/register?account=' + x.id + '" class="acct-tile' + (x.id === a.id ? ' on' : '') + '">' +
+      '<div class="small muted">' + esc(CLASS_LABEL[L.classify(x)]) + '</div><div class="nm">' + esc(displayName(x)) + '</div>' +
+      '<div class="bal">' + money(bals.get(x.id).balance) + '</div></a>').join('') +
+      '<a href="#/accounts" class="acct-tile add" id="reg-add-acct"><div class="nm">+ Add account / card</div></a></div>';
+
+    const inputRow = (cls, v) =>
+      '<tr class="' + cls + '"' + (v.id ? ' data-id="' + v.id + '"' : '') + '>' +
+      '<td><input type="date" class="r-date" value="' + esc(v.date) + '"></td>' +
+      '<td><input class="r-ref" value="' + esc(v.ref || '') + '" placeholder="Ref no."></td>' +
+      '<td><input class="r-payee" list="reg-payees" value="' + esc(v.payee || '') + '" placeholder="Payee / description"></td>' +
+      '<td><input class="r-acct" list="reg-accts" value="' + esc(v.account || '') + '" placeholder="Account (expense, income, asset, liability…)"></td>' +
+      '<td><input class="r-memo" value="' + esc(v.memo || '') + '" placeholder="Memo"></td>' +
+      '<td><input class="r-out num" inputmode="decimal" value="' + esc(v.out || '') + '" placeholder="' + cols.out + '"></td>' +
+      '<td><input class="r-in num" inputmode="decimal" value="' + esc(v.in || '') + '" placeholder="' + cols.in + '"></td>' +
+      '<td class="r-actions"><button class="primary r-save" title="Save (Enter)">Save</button>' +
+      '<button class="r-split" title="Split across several accounts">Split</button>' +
+      (v.id ? '<button class="r-cancel" title="Cancel (Esc)">Cancel</button><button class="danger r-del" title="Delete">Delete</button>' : '') +
+      '</td></tr>' +
+      (regState.error && regState.errorRow === (v.id || 'new') ? '<tr class="r-err"><td colspan="9"><div class="notice err" style="margin:0">' + esc(regState.error) + '</div></td></tr>' : '');
+
+    const body = shown.map((r) => {
+      const e = r.entry;
+      const isSplit = r.counterIds.length !== 1 || e.lines.length !== 2;
+      const locked = closed && e.date <= closed && e.kind !== 'closing';
+      if (regState.editing === e.id && !isSplit) {
+        return inputRow('r-edit', {
+          id: e.id, date: e.date, ref: e.ref, payee: e.description, memo: e.memo,
+          account: displayName(acct(r.counterIds[0]) || { name: '' }),
+          out: flow(r.delta) < 0 ? centsToInput(-flow(r.delta)) : '', in: flow(r.delta) > 0 ? centsToInput(flow(r.delta)) : '',
+        });
+      }
+      return '<tr class="click r-row" data-id="' + e.id + '"><td>' + fmtDate(e.date) + (locked ? ' <span title="Closed period" class="muted">🔒</span>' : '') + '</td>' +
+        '<td>' + esc(e.ref || '') + '</td><td>' + esc(e.description || '') + '</td>' +
+        '<td>' + (isSplit ? '<i>— Split (' + (e.lines.length - 1) + ') —</i>' : esc(acctName(r.counterIds[0]))) +
+        (e.kind === 'opening' || e.kind === 'adjusting' || e.kind === 'closing' ? ' ' + kindBadge(e.kind) : '') + '</td>' +
+        '<td class="muted">' + esc(e.memo || '') + '</td>' +
+        '<td class="num">' + (flow(r.delta) < 0 ? money(-flow(r.delta)) : '') + '</td><td class="num">' + (flow(r.delta) > 0 ? money(flow(r.delta)) : '') + '</td>' +
+        '<td class="num"><b>' + money(r.balance) + '</b></td></tr>';
+    }).join('');
+
+    // Statement check: compare the register balance with the bank's figure.
+    let stmt = '';
+    if (regState.stmtDate && regState.stmtBal !== '') {
+      const sb = L.toCents(regState.stmtBal);
+      const rb = L.balanceOf(book, a.id, { to: regState.stmtDate });
+      if (!isNaN(sb)) {
+        const diff = rb - sb;
+        stmt = '<div class="notice ' + (diff === 0 ? 'ok' : 'warn') + '" style="margin:8px 0 0">' +
+          'Register balance on ' + fmtDate(regState.stmtDate) + ': <b>' + money(rb) + '</b> · Statement: <b>' + money(sb) + '</b> · ' +
+          (diff === 0 ? '✓ Matches — everything on this statement is encoded.' : 'Difference <b>' + money(diff) + '</b> — something is missing or mistyped.') + '</div>';
+      }
+    }
+
+    main.innerHTML =
+      '<div class="page-head"><div><h1>Bank register</h1><div class="sub">Encode every line of your bank or card statement. Pick the account it belongs to — expense, income, another bank, a credit card, a loan, an asset — and the journal entry is made for you.</div></div>' +
+      '<div class="btn-row"><button id="reg-import">Import CSV</button><a class="btn" href="#/journal">View journal</a></div></div>' +
+      strip +
+      '<div class="card reg-card">' +
+      '<div class="reg-head"><div><h2 style="margin:0">' + esc(displayName(a)) + '</h2><div class="small muted">' + esc(L.SUBTYPES[a.type][a.subtype] || '') + (a.institution ? ' · ' + esc(a.institution) : '') +
+      ' · ' + (a.type === 'liability' ? 'Balance owed' : 'Balance') + ' today <b>' + money(L.balanceOf(book, a.id, { to: t })) + '</b></div></div>' +
+      '<div class="toolbar" style="margin:0"><label class="field">Find<input type="search" id="reg-search" value="' + esc(regState.search) + '" placeholder="Payee, memo, amount"></label>' +
+      '<label class="field">Statement date<input type="date" id="reg-sdate" value="' + esc(regState.stmtDate) + '"></label>' +
+      '<label class="field">Statement ending balance<input id="reg-sbal" inputmode="decimal" value="' + esc(regState.stmtBal) + '" placeholder="0.00"></label></div></div>' +
+      stmt +
+      '<div class="table-wrap" style="margin-top:12px"><table class="reg-table"><colgroup><col style="width:124px"><col style="width:70px"><col style="width:16%"><col style="width:19%"><col><col style="width:104px"><col style="width:104px"><col style="width:140px"></colgroup>' +
+      '<thead><tr><th>Date</th><th>Ref no.</th><th>Payee</th><th>Account</th><th>Memo</th><th class="num" title="' + esc(cols.outHint) + '">' + cols.out + '</th><th class="num" title="' + esc(cols.inHint) + '">' + cols.in + '</th><th class="num">Balance</th></tr></thead>' +
+      '<tbody>' + inputRow('r-new', { date: regState.lastDate || t }) +
+      (body || '<tr><td colspan="8" class="empty">Nothing encoded yet. Type your first statement line above and press Enter.</td></tr>') +
+      '</tbody></table></div>' +
+      '<p class="small muted" style="margin-top:10px"><b>' + cols.out + '</b>: ' + esc(cols.outHint) + '. <b>' + cols.in + '</b>: ' + esc(cols.inHint) +
+      '. Press <kbd>Enter</kbd> to save a line; the date is kept for the next one. Click any line to edit it. Typing a payee you used before fills in its account.</p>' +
+      '</div>' +
+      '<datalist id="reg-accts">' + others.map((x) => '<option value="' + esc(displayName(x)) + '" label="' + esc(typeLabel(x)) + '">').join('') + '</datalist>' +
+      '<datalist id="reg-payees">' + payees.slice(0, 500).map((p) => '<option value="' + esc(p) + '">').join('') + '</datalist>';
+
+    // Toolbar
+    const search = $('#reg-search');
+    search.oninput = debounce(() => { regState.search = search.value; rerender(); const s = $('#reg-search'); s.focus(); s.setSelectionRange(s.value.length, s.value.length); }, 250);
+    $('#reg-sdate').onchange = (e) => { regState.stmtDate = e.target.value; rerender(); };
+    $('#reg-sbal').onchange = (e) => { regState.stmtBal = e.target.value; rerender(); };
+    $('#reg-import').onclick = () => openImportDialog(a.id);
+    $('#reg-add-acct').onclick = (e) => { e.preventDefault(); openAccountDialog(); };
+
+    // Read-only rows: click to edit inline (splits open the journal editor).
+    $$('tr.r-row').forEach((tr) => tr.onclick = () => {
+      const e = book.entries.find((x) => x.id === tr.dataset.id);
+      if (!e) return;
+      if (e.kind === 'closing') { location.hash = '#/close'; return; }
+      if (e.lines.length !== 2 || e.lines.every((l) => l.accountId === a.id)) { openJournalDialog({ entry: e }); return; }
+      regState.editing = e.id; regState.error = ''; regState.draft = null; rerender();
+      const ed = $('tr.r-edit .r-payee'); if (ed) ed.focus();
+    });
+
+    const memory = buildPayeeMemory();
+    $$('tr.r-new, tr.r-edit').forEach((tr) => {
+      const f = (c) => $(c, tr);
+      // Payee → remembered account.
+      f('.r-payee').addEventListener('change', () => {
+        if (f('.r-acct').value.trim()) return;
+        const m = memory[f('.r-payee').value.trim().toLowerCase()];
+        if (!m) return;
+        const id = m[a.id] || m.any;
+        const x = id && acct(id);
+        if (x && x.id !== a.id) f('.r-acct').value = displayName(x);
+      });
+      // Typing in one amount column clears the other.
+      f('.r-out').addEventListener('input', () => { if (f('.r-out').value) f('.r-in').value = ''; });
+      f('.r-in').addEventListener('input', () => { if (f('.r-in').value) f('.r-out').value = ''; });
+      tr.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); saveRow(tr); }
+        if (ev.key === 'Escape' && tr.classList.contains('r-edit')) { regState.editing = null; regState.error = ''; regState.draft = null; rerender(); }
+      });
+      f('.r-save').onclick = () => saveRow(tr);
+      f('.r-split').onclick = () => splitRow(tr);
+      if (f('.r-cancel')) f('.r-cancel').onclick = () => { regState.editing = null; regState.error = ''; regState.draft = null; rerender(); };
+      if (f('.r-del')) f('.r-del').onclick = () => {
+        if (!confirm('Delete this transaction?')) return;
+        try { L.deleteEntry(book, tr.dataset.id); } catch (err) { return rowError(tr, err.message); }
+        regState.editing = null; regState.error = ''; commit(); toast('Deleted');
+      };
+    });
+
+    if (!regState.editing) {
+      const first = $('tr.r-new ' + (regState.error && regState.errorRow === 'new' ? '.r-acct' : '.r-payee'));
+      if (first && document.activeElement === document.body) first.focus();
+    }
+
+    function readRow(tr) {
+      const f = (c) => $(c, tr).value;
+      return { id: tr.dataset.id || null, date: f('.r-date'), ref: f('.r-ref'), payee: f('.r-payee').trim(), account: f('.r-acct').trim(), memo: f('.r-memo'), out: f('.r-out').trim(), in: f('.r-in').trim() };
+    }
+
+    function rowError(tr, msg) {
+      regState.error = msg; regState.errorRow = tr.dataset.id || 'new';
+      regState.draft = readRow(tr); // keep what was typed
+      rerender();
+    }
+
+    function resolveCounter(v, direction) {
+      let c = findByDisplayName(v.account);
+      if (!c && v.account) {
+        const type = direction === 'out' ? 'expense' : 'income';
+        if (!confirm('"' + v.account + '" is not an account yet.\n\nCreate it as a new ' + type + ' category?\n(For a new bank, card, loan or asset, use “+ Add account / card” instead.)')) return null;
+        c = acct(ensureCategory(type, v.account));
+      }
+      return c;
+    }
+
+    function saveRow(tr) {
+      const v = readRow(tr);
+      if (!v.date) return rowError(tr, 'Enter a date.');
+      const outC = v.out ? L.toCents(v.out) : 0, inC = v.in ? L.toCents(v.in) : 0;
+      if (isNaN(outC) || isNaN(inC)) return rowError(tr, 'Amounts must be numbers, e.g. 1,250.00');
+      if (!outC && !inC) return rowError(tr, 'Enter an amount under ' + cols.out + ' or ' + cols.in + '.');
+      if (outC && inC) return rowError(tr, 'Use either ' + cols.out + ' or ' + cols.in + ', not both.');
+      if (!v.account) return rowError(tr, 'Choose the account this ' + (outC ? cols.out.toLowerCase() : cols.in.toLowerCase()) + ' belongs to.');
+      let direction = outC ? 'out' : 'in';
+      let amount = outC || inC;
+      if (amount < 0) { amount = -amount; direction = direction === 'out' ? 'in' : 'out'; }
+      const c = resolveCounter(v, direction);
+      if (!c) return;
+      if (c.id === a.id) return rowError(tr, 'The account must be different from ' + a.name + '.');
+      const old = v.id && book.entries.find((x) => x.id === v.id);
+      const entry = L.simpleEntry(book, { id: v.id || undefined, date: v.date, description: v.payee, memo: v.memo, ref: v.ref, accountId: a.id, counterId: c.id, direction, amount });
+      if (old) { entry.createdAt = old.createdAt; if (['opening', 'adjusting', 'journal'].includes(old.kind)) entry.kind = old.kind; }
+      try { L.postEntry(book, entry); } catch (err) { return rowError(tr, err.message); }
+      regState.error = ''; regState.draft = null; regState.editing = null;
+      if (!v.id) regState.lastDate = v.date;
+      commit();
+      if (!v.id) { const p = $('tr.r-new .r-payee'); if (p) p.focus(); }
+      toast(v.id ? 'Updated' : 'Saved · ' + money(amount) + ' → ' + c.name);
+    }
+
+    function splitRow(tr) {
+      const v = readRow(tr);
+      const old = v.id && book.entries.find((x) => x.id === v.id);
+      if (old) { regState.editing = null; return openJournalDialog({ entry: old }); }
+      const outC = L.toCents(v.out) || 0, inC = L.toCents(v.in) || 0;
+      const amtC = Math.abs(outC || inC);
+      const c = findByDisplayName(v.account);
+      const bankLine = outC ? { accountId: a.id, debit: 0, credit: amtC } : { accountId: a.id, debit: amtC, credit: 0 };
+      const firstLine = { accountId: c ? c.id : '', debit: outC ? amtC : 0, credit: outC ? 0 : amtC };
+      openJournalDialog({ date: v.date, description: v.payee, ref: v.ref, memo: v.memo, kind: 'journal',
+        lines: [firstLine, { accountId: '', debit: 0, credit: 0 }, bankLine] });
+    }
+
+    // Restore a draft that failed validation.
+    const draftRow = regState.draft && (regState.draft.id ? $('tr.r-edit[data-id="' + regState.draft.id + '"]') : $('tr.r-new'));
+    if (draftRow) {
+      const tr = draftRow, d = regState.draft;
+      $('.r-date', tr).value = d.date; $('.r-ref', tr).value = d.ref; $('.r-payee', tr).value = d.payee;
+      $('.r-acct', tr).value = d.account; $('.r-memo', tr).value = d.memo; $('.r-out', tr).value = d.out; $('.r-in', tr).value = d.in;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Journal entry dialog (multi-line / split / adjusting)
   // ---------------------------------------------------------------------------
 
@@ -797,6 +1071,7 @@
         capture();
         const entry = {
           id: e && e.id, createdAt: e && e.createdAt, date: $('#j-date', dialog).value,
+          ref: e ? e.ref : opts.ref, memo: e ? e.memo : opts.memo,
           kind: $('#j-kind', dialog).value, description: $('#j-desc', dialog).value,
           lines: lines.filter((l) => l.accountId || l.debit || l.credit),
         };
@@ -941,7 +1216,7 @@
     let dr = 0, cr = 0;
     const body = entries.map((e) => {
       const sorted = e.lines.slice().sort((a, b) => (b.debit ? 1 : 0) - (a.debit ? 1 : 0));
-      return '<tr class="je-head click" data-entry="' + e.id + '"><td>' + fmtDate(e.date) + '</td><td colspan="3"><b>' + esc(e.description || '—') + '</b> ' + kindBadge(e.kind) + (e.memo ? ' <span class="muted small">' + esc(e.memo) + '</span>' : '') + '</td></tr>' +
+      return '<tr class="je-head click" data-entry="' + e.id + '"><td>' + fmtDate(e.date) + '</td><td colspan="3"><b>' + esc(e.description || '—') + '</b> ' + (e.ref ? '<span class="muted small">#' + esc(e.ref) + '</span> ' : '') + kindBadge(e.kind) + (e.memo ? ' <span class="muted small">' + esc(e.memo) + '</span>' : '') + '</td></tr>' +
         sorted.map((l, i) => {
           dr += l.debit; cr += l.credit;
           return '<tr class="je-line' + (i === sorted.length - 1 ? ' je-end' : '') + '"><td></td><td class="' + (l.credit ? 'je-credit' : '') + '">' + esc(acctName(l.accountId)) + '</td><td class="num">' + amt(l.debit) + '</td><td class="num">' + amt(l.credit) + '</td></tr>';
