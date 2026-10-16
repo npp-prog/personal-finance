@@ -125,7 +125,7 @@
     try {
       str = new Intl.NumberFormat(undefined, {
         style: 'currency',
-        currency: currency || 'USD',
+        currency: currency || 'PHP',
         minimumFractionDigits: 2,
       }).format(Math.abs(value));
     } catch (e) {
@@ -198,7 +198,7 @@
   }
 
   function emptyBook() {
-    return { version: 1, currency: 'USD', accounts: defaultAccounts(), entries: [], people: [] };
+    return { version: 1, currency: 'PHP', accounts: defaultAccounts(), entries: [], people: [] };
   }
 
   // ---------------------------------------------------------------------------

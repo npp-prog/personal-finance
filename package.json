@@ -1,11 +1,25 @@
 {
   "name": "personal-finance-ledger",
   "version": "1.0.0",
-  "description": "Double-entry personal finance app with the full accounting cycle: journal, ledger, trial balance, adjustments, financial statements and closing.",
+  "description": "Personal finance with double-entry accounting: bank register, people receivables/payables, P&L, balance sheet, cash flow and general ledger. Web app and Android app.",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "start": "python3 -m http.server 8080"
+    "start": "python3 -m http.server 8080",
+    "build": "node scripts/build-web.js",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:icons": "npx @capacitor/assets generate --android --iconBackgroundColor '#15803d' --splashBackgroundColor '#15803d' --splashBackgroundColorDark '#121214'",
+    "android:open": "npx cap open android"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3"
+  }
 }

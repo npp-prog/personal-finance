@@ -5,38 +5,40 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#2a78d6">
-  <title>Personal Finance Ledger</title>
+  <meta name="theme-color" content="#15803d">
+  <title>Personal Ledger</title>
   <meta name="description" content="Double-entry personal finance: track every card and account, close the books, and produce a P&amp;L, balance sheet and cash flow statement.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><span class="brand-mark">Σ</span>Ledger</div>
+      <div class="brand"><span class="brand-mark">Σ</span><span class="lbl">Ledger</span><button class="side-toggle" id="side-toggle" type="button" aria-label="Collapse menu" title="Collapse menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button></div>
       <nav class="nav">
         <div class="nav-group">
           <div class="nav-label">Overview</div>
-          <a href="#/dashboard" data-route="dashboard">Dashboard</a>
-          <a href="#/register" data-route="register">Bank register</a>
-          <a href="#/people" data-route="people">People (owed to / by me)</a>
-          <a href="#/accounts" data-route="accounts">Accounts &amp; cards</a>
-          <a href="#/transactions" data-route="transactions">All transactions</a>
+          <a href="#/dashboard" data-route="dashboard" title="Dashboard"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg><span class="lbl">Dashboard</span></a>
+          <a href="#/register" data-route="register" title="Bank register"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg><span class="lbl">Bank register</span></a>
+          <a href="#/people" data-route="people" title="People — owed to / by me"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3 3 0 010 6M21 20c0-2.6-1.6-4.8-4-5.6"/></svg><span class="lbl">People</span></a>
+          <a href="#/accounts" data-route="accounts" title="Accounts & cards"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h14a2 2 0 012 2v9a2 2 0 01-2 2H4z"/><path d="M4 7V6a2 2 0 012-2h10v3"/><circle cx="16" cy="13.5" r="1.2"/></svg><span class="lbl">Accounts &amp; cards</span></a>
+          <a href="#/transactions" data-route="transactions" title="All transactions"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span class="lbl">All transactions</span></a>
         </div>
         <div class="nav-group">
           <div class="nav-label">Reports</div>
-          <a href="#/statements" data-route="statements">Financial statements</a>
-          <a href="#/ledger" data-route="ledger">General ledger</a>
+          <a href="#/statements" data-route="statements" title="Financial statements"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg><span class="lbl">Financial statements</span></a>
+          <a href="#/ledger" data-route="ledger" title="General ledger"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4.5A1.5 1.5 0 016.5 3H19v15H6.5A1.5 1.5 0 005 19.5z"/><path d="M5 19.5A1.5 1.5 0 006.5 21H19v-3M9 7h6M9 11h6"/></svg><span class="lbl">General ledger</span></a>
         </div>
         <div class="nav-group">
           <div class="nav-label">Period end</div>
-          <a href="#/adjust" data-route="adjust">Revalue &amp; adjust</a>
-          <a href="#/close" data-route="close">Close the period</a>
+          <a href="#/adjust" data-route="adjust" title="Revalue & adjust"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="lbl">Revalue &amp; adjust</span></a>
+          <a href="#/close" data-route="close" title="Close the period"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span class="lbl">Close the period</span></a>
         </div>
         <div class="nav-group">
           <div class="nav-label">Data</div>
-          <a href="#/practice" data-route="practice">🧪 Practice mode</a>
-          <a href="#/settings" data-route="settings">Settings &amp; backup</a>
+          <a href="#/settings" data-route="settings" title="Settings & backup"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M2.5 12h3M18.5 12h3M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span class="lbl">Settings &amp; backup</span></a>
         </div>
       </nav>
     </aside>
@@ -46,7 +48,6 @@
         <span id="bar-title">Ledger</span>
         <a class="btn primary bar-action" href="#/register">+ Encode</a>
       </div>
-      <div id="mode-banner"></div>
       <main class="main" id="main"></main>
     </div>
     <div class="scrim" id="scrim"></div>

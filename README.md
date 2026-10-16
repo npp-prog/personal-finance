@@ -4,6 +4,13 @@ A personal finance app built on real double-entry accounting. You encode each ba
 
 There's nothing to install and no build step, and your data never leaves your browser.
 
+## Android app (Google Play)
+
+The same app is packaged for Android with Capacitor.
+* GitHub Actions builds a test APK and a signed Play Store bundle.
+* **[PLAYSTORE.md](PLAYSTORE.md)** has the step-by-step publishing guide.
+* `store/` holds the listing texts, icon, feature graphic and screenshots.
+
 ## Run it
 
 Open `index.html` in a browser. You can also serve the folder:
@@ -12,21 +19,7 @@ Open `index.html` in a browser. You can also serve the folder:
 npm start            # python3 -m http.server 8080 → http://localhost:8080
 ```
 
-### Practice mode (trial data)
-
-Open **🧪 Practice mode** from the menu to try things on temporary data. You can start with:
-
-* **Blank books**: empty, with the default categories.
-* **Sample data**: three months of demo accounts, cards, people and transactions.
-* **A copy of my books**: your real data, to experiment on safely.
-
-While practice mode is on:
-
-* A yellow banner shows on every page.
-* Printed statements are stamped *"Practice data — not real figures"*.
-* Your real books are stored separately and never touched.
-
-**Exit practice & discard** deletes the practice data and brings your real books back. If you want to keep something you made in practice, use **Settings → Export backup** before leaving.
+To explore with demo data, go to **Settings & backup → Load sample data**. This replaces your current data, so export a backup first.
 
 ### On a tablet
 
@@ -119,9 +112,15 @@ The **People** page tracks money that specific people owe you and money you owe 
 
 ## Data & backup
 
-* Data is stored in your browser's `localStorage`.
-* Use **Settings → Export backup** to save a JSON file, and **Restore backup** to load it on another device or browser.
-* You can also export every journal line as CSV.
+* Everything is stored on your device: the browser's `localStorage`, or the app's own storage on Android.
+* **Settings & backup → Back up now** saves one `.json` file with all your accounts, cards, people and transactions. On Android it opens the share sheet, so you can save it to Google Drive or Files, or email it.
+* The dashboard reminds you to back up if you never have, or if you've made changes and your last backup is more than a week old.
+* **Restore from backup** shows what's inside the file (accounts, entries, the date it was made) before it replaces anything. Use it to move to a new phone, tablet or computer.
+* **Export transactions (CSV)** saves every journal line as a spreadsheet.
+
+## Account colours
+
+Give each bank account or card a colour: pick one of ten presets or any custom colour. Edit the account from **Accounts & cards** or with the **Edit** link in the Bank register. The colour shows as a stripe on the register tiles and a dot in the account lists.
 
 ## Development
 
@@ -136,5 +135,7 @@ tests/            engine unit tests (node:test)
 ```bash
 npm test
 ```
+
+The default currency is the Philippine peso (₱). You can change it in Settings.
 
 Amounts are stored as integer cents. Debit-normal accounts are assets and expenses. Credit-normal accounts are liabilities, equity and income.

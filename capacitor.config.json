@@ -1,0 +1,8 @@
+{
+  "appId": "org.mgocandoniaccounting.ledger",
+  "appName": "Personal Ledger",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#f6f6f4"
+  }
+}
