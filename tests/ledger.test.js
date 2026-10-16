@@ -117,3 +117,40 @@ test('CSV and date parsing', () => {
   assert.equal(L.parseDate('01/02/26', true), '2026-02-01');
   assert.equal(L.parseDate('2026-01-03'), '2026-01-03');
 });
+
+test('receivables and payables per person', () => {
+  const book = setup();
+  const juan = L.addPerson(book, 'Juan');
+  const mom = L.addPerson(book, 'Mom');
+  const pj = L.personAccounts(book, juan.id), pm = L.personAccounts(book, mom.id);
+  const s = (o) => L.postEntry(book, L.simpleEntry(book, o));
+  s({ date: '2026-02-01', description: 'Lent to Juan', accountId: 'chk', counterId: pj.receivable.id, direction: 'out', amount: 500000 });
+  s({ date: '2026-02-10', description: 'Juan repaid', accountId: 'chk', counterId: pj.receivable.id, direction: 'in', amount: 200000 });
+  s({ date: '2026-02-03', description: 'Borrowed from Mom', accountId: 'chk', counterId: pm.payable.id, direction: 'in', amount: 1000000 });
+  // Mom paid for my groceries: Dr Groceries, Cr Payable – Mom
+  L.postEntry(book, { date: '2026-02-05', kind: 'expense', description: 'Mom paid groceries', lines: [
+    { accountId: 'exp_groceries', debit: 30000, credit: 0 }, { accountId: pm.payable.id, debit: 0, credit: 30000 }] });
+
+  const sum = L.peopleSummary(book, '2026-02-28');
+  const j = sum.find((x) => x.person.name === 'Juan'), m = sum.find((x) => x.person.name === 'Mom');
+  assert.equal(j.owedToMe, 300000);
+  assert.equal(m.iOwe, 1030000);
+  assert.equal(m.net, -1030000);
+
+  const st = L.personStatement(book, juan.id);
+  assert.deepEqual(st.map((r) => r.net), [500000, 300000]);
+
+  const bs = L.balanceSheet(book, '2026-02-28');
+  assert.ok(bs.balanced);
+  assert.equal(bs.totals.receivables, 300000);
+  assert.equal(bs.totals.payables, 1030000);
+
+  const cf = L.cashFlowStatement(book, '2026-02-01', '2026-02-28');
+  assert.ok(cf.reconciles);
+  assert.equal(cf.investing.find((r) => r.account.id === pj.receivable.id).amount, -300000);
+  assert.equal(cf.financing.find((r) => r.account.id === pm.payable.id).amount, 1000000);
+
+  L.renamePerson(book, juan.id, 'Juan dela Cruz');
+  assert.equal(L.personAccounts(book, juan.id).receivable.name, 'Receivable – Juan dela Cruz');
+  assert.throws(() => L.addPerson(book, 'mom'));
+});

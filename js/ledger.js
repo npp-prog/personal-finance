@@ -33,6 +33,7 @@
     },
     liability: {
       credit_card: 'Credit card',
+      payable: 'Owed to a person',
       loan: 'Loan',
       mortgage: 'Mortgage',
       other: 'Other liability',
@@ -59,7 +60,9 @@
         if (acct.subtype === 'receivable') return 'receivable';
         return 'other_asset';
       case 'liability':
-        return acct.subtype === 'credit_card' ? 'credit_card' : 'loan';
+        if (acct.subtype === 'credit_card') return 'credit_card';
+        if (acct.subtype === 'payable') return 'payable';
+        return 'loan';
       default:
         return acct.type;
     }
@@ -195,7 +198,7 @@
   }
 
   function emptyBook() {
-    return { version: 1, currency: 'USD', accounts: defaultAccounts(), entries: [] };
+    return { version: 1, currency: 'USD', accounts: defaultAccounts(), entries: [], people: [] };
   }
 
   // ---------------------------------------------------------------------------
@@ -364,6 +367,79 @@
   }
 
   // ---------------------------------------------------------------------------
+  // People: a receivable and a payable account per person
+  // ---------------------------------------------------------------------------
+
+  function personAccounts(book, personId) {
+    return {
+      receivable: book.accounts.find((a) => a.personId === personId && a.type === 'asset'),
+      payable: book.accounts.find((a) => a.personId === personId && a.type === 'liability'),
+    };
+  }
+
+  function addPerson(book, name, notes) {
+    name = String(name || '').trim();
+    if (!name) throw new Error('Name is required.');
+    book.people = book.people || [];
+    if (book.people.some((p) => p.name.toLowerCase() === name.toLowerCase())) throw new Error(name + ' is already in your list.');
+    const person = { id: uid('per'), name, notes: (notes || '').trim() || undefined };
+    book.people.push(person);
+    book.accounts.push(
+      { id: uid('acc'), name: 'Receivable – ' + name, type: 'asset', subtype: 'receivable', personId: person.id },
+      { id: uid('acc'), name: 'Payable – ' + name, type: 'liability', subtype: 'payable', personId: person.id });
+    return person;
+  }
+
+  function renamePerson(book, personId, name) {
+    const p = (book.people || []).find((x) => x.id === personId);
+    name = String(name || '').trim();
+    if (!p || !name) return;
+    p.name = name;
+    const pa = personAccounts(book, personId);
+    if (pa.receivable) pa.receivable.name = 'Receivable – ' + name;
+    if (pa.payable) pa.payable.name = 'Payable – ' + name;
+  }
+
+  /**
+   * Per-person summary as of a date. owedToMe / iOwe are natural balances,
+   * net > 0 means the person owes you overall.
+   */
+  function peopleSummary(book, asOf) {
+    const bals = balances(book, { to: asOf });
+    return (book.people || []).map((p) => {
+      const pa = personAccounts(book, p.id);
+      const owedToMe = pa.receivable ? bals.get(pa.receivable.id).balance : 0;
+      const iOwe = pa.payable ? bals.get(pa.payable.id).balance : 0;
+      let last = null;
+      for (const e of book.entries) {
+        if (e.date <= asOf && e.lines.some((l) => l.accountId === (pa.receivable || {}).id || l.accountId === (pa.payable || {}).id) && (!last || e.date > last)) last = e.date;
+      }
+      return { person: p, owedToMe, iOwe, net: owedToMe - iOwe, lastActivity: last, accounts: pa };
+    });
+  }
+
+  /** Statement of account for one person: every entry, running net (+ they owe me). */
+  function personStatement(book, personId, f) {
+    const pa = personAccounts(book, personId);
+    const ids = [pa.receivable && pa.receivable.id, pa.payable && pa.payable.id].filter(Boolean);
+    let running = 0;
+    const rows = [];
+    for (const e of sortedEntries(selectEntries(book, f))) {
+      let rec = 0, pay = 0;
+      for (const l of e.lines) {
+        if (pa.receivable && l.accountId === pa.receivable.id) rec += l.debit - l.credit;
+        if (pa.payable && l.accountId === pa.payable.id) pay += l.credit - l.debit;
+      }
+      if (!e.lines.some((l) => ids.includes(l.accountId))) continue;
+      const delta = rec - pay;
+      running += delta;
+      const counterIds = Array.from(new Set(e.lines.filter((l) => !ids.includes(l.accountId)).map((l) => l.accountId)));
+      rows.push({ entry: e, receivable: rec, payable: pay, delta, net: running, counterIds });
+    }
+    return rows;
+  }
+
+  // ---------------------------------------------------------------------------
   // Balances
   // ---------------------------------------------------------------------------
 
@@ -473,7 +549,7 @@
 
   function orderAccounts(accounts) {
     const typeOrder = { asset: 0, liability: 1, equity: 2, income: 3, expense: 4 };
-    const classOrder = { cash: 0, receivable: 1, investment: 2, other_asset: 3, credit_card: 0, loan: 1 };
+    const classOrder = { cash: 0, receivable: 1, investment: 2, other_asset: 3, credit_card: 0, payable: 1, loan: 2 };
     return accounts.slice().sort((a, b) =>
       typeOrder[a.type] - typeOrder[b.type] ||
       (classOrder[classify(a)] || 0) - (classOrder[classify(b)] || 0) ||
@@ -585,6 +661,7 @@
     const otherAssets = group((a) => classify(a) === 'other_asset');
     const creditCards = group((a) => classify(a) === 'credit_card');
     const loans = group((a) => classify(a) === 'loan');
+    const payables = group((a) => classify(a) === 'payable');
     const equityAccts = group((a) => a.type === 'equity').filter((r) => r.amount !== 0);
 
     // Income/expense not yet closed into retained earnings.
@@ -595,21 +672,29 @@
     }
 
     const totalAssets = sum(cash) + sum(receivables) + sum(investments) + sum(otherAssets);
-    const totalLiabilities = sum(creditCards) + sum(loans);
+    const totalLiabilities = sum(creditCards) + sum(payables) + sum(loans);
     const totalEquity = sum(equityAccts) + unclosed;
     return {
       asOf,
       assets: { cash, receivables, investments, otherAssets },
-      liabilities: { creditCards, loans },
+      liabilities: { creditCards, payables, loans },
       equity: { accounts: equityAccts, unclosedNetIncome: unclosed },
       totals: {
         cash: sum(cash), receivables: sum(receivables), investments: sum(investments),
-        otherAssets: sum(otherAssets), creditCards: sum(creditCards), loans: sum(loans),
+        otherAssets: sum(otherAssets), creditCards: sum(creditCards), payables: sum(payables), loans: sum(loans),
         assets: totalAssets, liabilities: totalLiabilities, equity: totalEquity,
       },
       netWorth: totalAssets - totalLiabilities,
       balanced: totalAssets === totalLiabilities + totalEquity,
     };
+  }
+
+  /** Money lent to a person is investing; money borrowed from a person is financing. */
+  function cashFlowSection(a) {
+    const c = classify(a);
+    if (a.personId && c === 'receivable') return 'investing';
+    if (c === 'payable') return 'financing';
+    return CF_SECTION[c] || 'operating';
   }
 
   const CF_SECTION = {
@@ -638,7 +723,7 @@
       for (const l of e.lines) {
         if (isCash(l.accountId)) continue;
         const a = accts.get(l.accountId);
-        const sec = CF_SECTION[classify(a)] || 'operating';
+        const sec = cashFlowSection(a);
         const m = lines[sec];
         m.set(a.id, (m.get(a.id) || 0) + (l.credit - l.debit));
       }
@@ -738,6 +823,7 @@
     TYPES, SUBTYPES, ENTRY_KINDS, CASH_SUBTYPES, INVESTMENT_SUBTYPES,
     classify, isDebitNormal, isTemporary,
     uid, toCents, formatMoney, todayISO, addDays, monthEnd, sumLines,
+    addPerson, renamePerson, personAccounts, peopleSummary, personStatement, cashFlowSection,
     emptyBook, defaultAccounts, findAccount, systemAccount, accountMap, orderAccounts,
     closedThrough, validateEntry, postEntry, deleteEntry, simpleEntry, asSimple, openingEntry,
     sortedEntries, selectEntries, balances, balanceOf, register,

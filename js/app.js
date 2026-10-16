@@ -10,6 +10,7 @@
   // ---------------------------------------------------------------------------
 
   let book = load();
+  book.people = book.people || [];
   let prefs = loadPrefs();
 
   function load() {
@@ -85,11 +86,11 @@
 
   const CLASS_LABEL = {
     cash: 'Cash', receivable: 'Receivable', investment: 'Investment', other_asset: 'Other asset',
-    credit_card: 'Credit card', loan: 'Loan', equity: 'Equity', income: 'Income', expense: 'Expense',
+    credit_card: 'Credit card', payable: 'Payable', loan: 'Loan', equity: 'Equity', income: 'Income', expense: 'Expense',
   };
   function classBadge(a) {
     const c = L.classify(a);
-    const cls = c === 'cash' ? 'cash' : (c === 'credit_card' || c === 'loan') ? 'liab' : c === 'investment' ? 'inv' : '';
+    const cls = c === 'cash' ? 'cash' : (c === 'credit_card' || c === 'loan' || c === 'payable') ? 'liab' : c === 'investment' ? 'inv' : '';
     return '<span class="badge ' + cls + '">' + esc(CLASS_LABEL[c] || c) + '</span>';
   }
   function kindBadge(kind) {
@@ -106,8 +107,9 @@
       ['Bank, debit & cash (assets)', (a) => L.classify(a) === 'cash'],
       ['Credit cards (liabilities)', (a) => L.classify(a) === 'credit_card'],
       ['Investments', (a) => L.classify(a) === 'investment'],
-      ['Other assets', (a) => ['other_asset', 'receivable'].includes(L.classify(a))],
-      ['Loans & other liabilities', (a) => L.classify(a) === 'loan'],
+      ['Other assets', (a) => ['other_asset', 'receivable'].includes(L.classify(a)) && !a.personId],
+      ['Loans & other liabilities', (a) => L.classify(a) === 'loan' || (L.classify(a) === 'payable' && !a.personId)],
+      ['People — receivables & payables', (a) => !!a.personId],
       ['Expense categories', (a) => a.type === 'expense'],
       ['Income categories', (a) => a.type === 'income'],
       ['Equity', (a) => a.type === 'equity'],
@@ -200,9 +202,8 @@
     accounts: renderAccounts,
     register: (p) => renderRegister(p.get('account')),
     transactions: renderTransactions,
-    journal: renderJournal,
-    ledger: renderLedger,
-    trial: renderTrial,
+    ledger: (p) => renderLedger(p),
+    people: renderPeople,
     adjust: renderAdjust,
     statements: renderStatements,
     close: renderClose,
@@ -280,12 +281,12 @@
 
     const groups = [
       ['Bank, debit & cash', 'cash'], ['Credit cards', 'credit_card'], ['Investments', 'investment'],
-      ['Other assets', 'other_asset'], ['Receivables', 'receivable'], ['Loans', 'loan'],
+      ['Other assets', 'other_asset'], ['Loans', 'loan'],
     ];
     const bals = L.balances(book, { to: t });
     const accountsCard = '<div class="card"><div class="page-head" style="margin-bottom:8px"><h2 style="margin:0">Accounts</h2><a href="#/accounts" class="small">Manage</a></div>' +
       groups.map(([label, cls]) => {
-        const list = activeAccounts((a) => L.classify(a) === cls);
+        const list = activeAccounts((a) => L.classify(a) === cls && !a.personId);
         if (!list.length) return '';
         return '<h3 style="margin-top:12px">' + label + '</h3><table><tbody>' + list.map((a) =>
           '<tr class="click" data-href="#/transactions?account=' + a.id + '"><td>' + esc(a.name) +
@@ -293,14 +294,12 @@
           '<td class="num">' + money(bals.get(a.id).balance) + '</td></tr>').join('') + '</tbody></table>';
       }).join('') + '</div>';
 
-    const cycle = '<div class="card"><h2>Accounting cycle</h2><div class="cycle">' + [
-      ['journal', '1', 'Journalize', 'Every transaction as a balanced entry'],
-      ['ledger', '2', 'Post to ledger', 'Running balance per account'],
-      ['trial', '3', 'Trial balance', 'Debits = credits check'],
-      ['adjust', '4', 'Adjust', 'Market values, accruals'],
-      ['statements', '5', 'Statements', 'P&L, balance sheet, cash flow'],
-      ['close', '6', 'Close', 'Roll net income into equity'],
-    ].map(([r, n, ti, d]) => '<a href="#/' + r + '"><div class="n">STEP ' + n + '</div><div class="t">' + ti + '</div><div class="d">' + d + '</div></a>').join('') + '</div></div>';
+    const ppl = L.peopleSummary(book, t).filter((x) => x.net !== 0).sort((x, y) => Math.abs(y.net) - Math.abs(x.net));
+    const peopleCard = '<div class="card"><div class="page-head" style="margin-bottom:8px"><h2 style="margin:0">People</h2><a href="#/people" class="small">Open</a></div>' +
+      (ppl.length ? '<table><tbody>' + ppl.slice(0, 6).map((x) =>
+        '<tr class="click" data-href="#/people?person=' + x.person.id + '"><td>' + esc(x.person.name) + '</td><td>' +
+        (x.net > 0 ? '<span class="badge cash">Owes you</span>' : '<span class="badge liab">You owe</span>') + '</td><td class="num">' + money(Math.abs(x.net)) + '</td></tr>').join('') + '</tbody></table>'
+        : '<div class="empty small">No open receivables or payables. <a href="#/people">Add people</a> you lend to or borrow from.</div>') + '</div>';
 
     main.innerHTML =
       '<div class="page-head"><div><h1>Dashboard</h1><div class="sub">As of ' + fmtDate(t) +
@@ -308,8 +307,7 @@
       '<div class="btn-row"><button id="add-tx">+ Quick transaction</button><button id="add-acct">+ Account / card</button><a class="btn primary" href="#/register">Encode bank transactions</a></div></div>' +
       (hasAccounts ? '' : '<div class="notice warn">Start by adding your bank accounts, debit and credit cards, investments and other assets — or <a href="#/settings">load sample data</a> to explore.</div>') +
       kpis +
-      '<div class="grid grid-2"><div>' + chart + month + '</div><div>' + accountsCard + spend + '</div></div>' +
-      '<div style="margin-top:16px">' + cycle + '</div>';
+      '<div class="grid grid-2"><div>' + chart + month + peopleCard + '</div><div>' + accountsCard + spend + '</div></div>';
 
     drawLineChart($('#nw-chart'), series);
     bindRowLinks();
@@ -404,8 +402,8 @@
       ['Bank accounts, debit cards & cash', 'Cash assets', (a) => L.classify(a) === 'cash'],
       ['Credit cards', 'Liabilities', (a) => L.classify(a) === 'credit_card'],
       ['Investments', 'Assets', (a) => L.classify(a) === 'investment'],
-      ['Other assets', 'Property, vehicles, receivables', (a) => ['other_asset', 'receivable'].includes(L.classify(a))],
-      ['Loans & other liabilities', 'Liabilities', (a) => L.classify(a) === 'loan'],
+      ['Other assets', 'Property, vehicles, receivables', (a) => ['other_asset', 'receivable'].includes(L.classify(a)) && !a.personId],
+      ['Loans & other liabilities', 'Liabilities', (a) => (L.classify(a) === 'loan' || L.classify(a) === 'payable') && !a.personId],
     ];
     const showArchived = !!prefs.showArchived;
     const table = (pred, withRevalue) => {
@@ -583,7 +581,7 @@
     main.innerHTML =
       '<div class="page-head"><div><h1>' + (a ? esc(a.name) : 'All transactions') + '</h1><div class="sub">' +
       (a ? esc(L.SUBTYPES[a.type][a.subtype] || '') + (a.institution ? ' · ' + esc(a.institution) : '') + (a.last4 ? ' ••' + esc(a.last4) : '') : 'Every entry across all your accounts and cards') + '</div></div>' +
-      '<div class="btn-row"><button id="import-csv">Import CSV</button><button id="add-je">Split / journal entry</button><button class="primary" id="add-tx">+ Transaction</button></div></div>' +
+      '<div class="btn-row"><button id="import-csv">Import CSV</button><button id="add-je">Split entry</button><button class="primary" id="add-tx">+ Transaction</button></div></div>' +
       '<div class="toolbar"><label class="field">Account / card<select id="tx-acct"><option value="">All accounts</option>' + accountOptions(accountId) + '</select></label>' +
       pt.html +
       '<label class="field">Type<select id="tx-kind"><option value="">All types</option>' +
@@ -785,7 +783,7 @@
   }
 
   function renderRegister(accountId) {
-    const bsAccounts = activeAccounts(isBalanceSheet);
+    const bsAccounts = activeAccounts((x) => isBalanceSheet(x) && !x.personId);
     const a = acct(accountId || regState.accountId || prefs.lastRegister) && isBalanceSheet(acct(accountId || regState.accountId || prefs.lastRegister))
       ? acct(accountId || regState.accountId || prefs.lastRegister)
       : bsAccounts.find((x) => L.classify(x) === 'cash' && x.id !== 'acc_cash') || bsAccounts[0];
@@ -867,7 +865,7 @@
 
     main.innerHTML =
       '<div class="page-head"><div><h1>Bank register</h1><div class="sub">Encode every line of your bank or card statement. Pick the account it belongs to — expense, income, another bank, a credit card, a loan, an asset — and the journal entry is made for you.</div></div>' +
-      '<div class="btn-row"><button id="reg-import">Import CSV</button><a class="btn" href="#/journal">View journal</a></div></div>' +
+      '<div class="btn-row"><button id="reg-import">Import CSV</button><a class="btn" href="#/ledger?account=' + a.id + '">General ledger</a></div></div>' +
       strip +
       '<div class="card reg-card">' +
       '<div class="reg-head"><div><h2 style="margin:0">' + esc(displayName(a)) + '</h2><div class="small muted">' + esc(L.SUBTYPES[a.type][a.subtype] || '') + (a.institution ? ' · ' + esc(a.institution) : '') +
@@ -1205,128 +1203,252 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 1. General journal
+  // General ledger (presentation report)
   // ---------------------------------------------------------------------------
 
-  const jState = { preset: 'this-month', kind: '' };
+  const glState = { preset: 'ytd', account: '' };
 
-  function renderJournal() {
-    const pt = periodToolbar(jState, rerender);
-    const entries = L.sortedEntries(L.selectEntries(book, { from: pt.range.from, to: pt.range.to, kinds: jState.kind ? [jState.kind] : null }));
-    let dr = 0, cr = 0;
-    const body = entries.map((e) => {
-      const sorted = e.lines.slice().sort((a, b) => (b.debit ? 1 : 0) - (a.debit ? 1 : 0));
-      return '<tr class="je-head click" data-entry="' + e.id + '"><td>' + fmtDate(e.date) + '</td><td colspan="3"><b>' + esc(e.description || '—') + '</b> ' + (e.ref ? '<span class="muted small">#' + esc(e.ref) + '</span> ' : '') + kindBadge(e.kind) + (e.memo ? ' <span class="muted small">' + esc(e.memo) + '</span>' : '') + '</td></tr>' +
-        sorted.map((l, i) => {
-          dr += l.debit; cr += l.credit;
-          return '<tr class="je-line' + (i === sorted.length - 1 ? ' je-end' : '') + '"><td></td><td class="' + (l.credit ? 'je-credit' : '') + '">' + esc(acctName(l.accountId)) + '</td><td class="num">' + amt(l.debit) + '</td><td class="num">' + amt(l.credit) + '</td></tr>';
-        }).join('');
-    }).join('');
-    main.innerHTML =
-      '<div class="page-head"><div><h1>General journal</h1><div class="sub">Step 1 — every transaction recorded chronologically as a balanced debit/credit entry.</div></div>' +
-      '<div class="btn-row"><button id="add-adj">+ Adjusting entry</button><button class="primary" id="add-je">+ Journal entry</button></div></div>' +
-      '<div class="toolbar">' + pt.html + '<label class="field">Entry type<select id="j-kind"><option value="">All</option>' +
-      Object.entries(L.ENTRY_KINDS).map(([k, v]) => '<option value="' + k + '"' + (jState.kind === k ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></label></div>' +
-      '<div class="card"><div class="table-wrap"><table><thead><tr><th style="width:120px">Date</th><th>Account &amp; explanation</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>' +
-      (body || '<tr><td colspan="4" class="empty">No entries in this period.</td></tr>') +
-      '</tbody>' + (entries.length ? '<tfoot><tr class="total"><td></td><td>Totals (' + entries.length + ' entries)</td><td class="num">' + money(dr) + '</td><td class="num">' + money(cr) + '</td></tr></tfoot>' : '') +
-      '</table></div></div>';
-    pt.bind(main);
-    $('#j-kind').onchange = (e) => { jState.kind = e.target.value; rerender(); };
-    $('#add-je').onclick = () => openJournalDialog({});
-    $('#add-adj').onclick = () => openJournalDialog({ kind: 'adjusting' });
-    $$('tr[data-entry]').forEach((tr) => tr.onclick = () => editEntry(tr.dataset.entry));
-  }
+  const GL_FILTERS = [
+    ['', 'All accounts with activity'],
+    ['@bs', 'Balance sheet accounts (assets, liabilities, equity)'],
+    ['@pl', 'Income & expense accounts'],
+    ['@people', 'People — receivables & payables'],
+  ];
 
-  // ---------------------------------------------------------------------------
-  // 2. General ledger
-  // ---------------------------------------------------------------------------
-
-  const glState = { preset: 'this-month', account: '' };
-
-  function renderLedger() {
+  function renderLedger(params) {
+    if (params && params.get('account')) glState.account = params.get('account');
     const pt = periodToolbar(glState, rerender);
     const r = pt.range;
-    const list = glState.account ? [acct(glState.account)].filter(Boolean) : L.orderAccounts(book.accounts);
-    const sections = list.map((a) => {
-      const open = L.balanceOf(book, a.id, { to: L.addDays(r.from, -1) });
-      const rows = L.register(book, a.id, { from: r.from, to: r.to });
-      if (!rows.length && !open) return '';
-      const dn = L.isDebitNormal(a);
-      let bal = open, dr = 0, cr = 0;
-      const tr = rows.map((x) => {
-        bal = open + x.balance; dr += x.debit; cr += x.credit;
-        return '<tr class="click" data-entry="' + x.entry.id + '"><td>' + fmtDate(x.entry.date) + '</td><td>' + esc(x.entry.description || '—') + ' ' + (x.entry.kind === 'adjusting' || x.entry.kind === 'closing' ? kindBadge(x.entry.kind) : '') + '</td>' +
-          '<td class="num">' + amt(x.debit) + '</td><td class="num">' + amt(x.credit) + '</td><td class="num">' + money(bal, { parens: true }) + '</td></tr>';
+    const f = glState.account;
+    const pred = f === '@bs' ? (a) => isBalanceSheet(a) || a.type === 'equity'
+      : f === '@pl' ? (a) => L.isTemporary(a)
+        : f === '@people' ? (a) => !!a.personId
+          : f ? (a) => a.id === f : () => true;
+    const groups = [['asset', 'Assets'], ['liability', 'Liabilities'], ['equity', 'Equity (net worth)'], ['income', 'Income'], ['expense', 'Expenses']];
+    let accountsShown = 0;
+    const body = groups.map(([type, title]) => {
+      const sections = L.orderAccounts(book.accounts).filter((a) => a.type === type && pred(a)).map((a) => {
+        const open = L.balanceOf(book, a.id, { to: L.addDays(r.from, -1) });
+        const rows = L.register(book, a.id, { from: r.from, to: r.to });
+        if (!rows.length && !open) return '';
+        accountsShown++;
+        let bal = open, dr = 0, cr = 0;
+        const tr = rows.map((x) => {
+          bal = open + x.balance; dr += x.debit; cr += x.credit;
+          const e = x.entry;
+          return '<tr class="click" data-entry="' + e.id + '"><td>' + fmtDate(e.date) + '</td><td>' + esc(e.ref || '') + '</td>' +
+            '<td>' + esc(e.description || '—') + (e.kind === 'adjusting' || e.kind === 'closing' || e.kind === 'opening' ? ' ' + kindBadge(e.kind) : '') + '</td>' +
+            '<td>' + (x.counterIds.length === 1 ? esc(acctName(x.counterIds[0])) : x.counterIds.length ? 'Split' : '') + '</td>' +
+            '<td class="num">' + amt(x.debit) + '</td><td class="num">' + amt(x.credit) + '</td><td class="num">' + money(bal, { parens: true }) + '</td></tr>';
+        }).join('');
+        return '<tr class="gl-acct"><td colspan="7">' + esc(a.name) + ' <span class="muted small">· normal ' + (L.isDebitNormal(a) ? 'debit' : 'credit') + ' balance</span></td></tr>' +
+          '<tr class="muted"><td>' + fmtDate(L.addDays(r.from, -1)) + '</td><td></td><td>Beginning balance</td><td></td><td></td><td></td><td class="num">' + money(open, { parens: true }) + '</td></tr>' + tr +
+          '<tr class="subtotal rule"><td></td><td></td><td>Total ' + esc(a.name) + '</td><td></td><td class="num">' + money(dr) + '</td><td class="num">' + money(cr) + '</td><td class="num">' + money(bal, { parens: true }) + '</td></tr>';
       }).join('');
-      return '<div class="card"><h2>' + esc(a.name) + ' <span class="small muted">· ' + esc(a.type) + ', normal ' + (dn ? 'debit' : 'credit') + ' balance</span></h2>' +
-        '<div class="table-wrap"><table><thead><tr><th style="width:120px">Date</th><th>Explanation</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>' +
-        '<tr><td>' + fmtDate(L.addDays(r.from, -1)) + '</td><td class="muted">Beginning balance</td><td></td><td></td><td class="num">' + money(open, { parens: true }) + '</td></tr>' + tr +
-        '<tr class="total"><td></td><td>Period totals / ending balance</td><td class="num">' + money(dr) + '</td><td class="num">' + money(cr) + '</td><td class="num">' + money(bal, { parens: true }) + '</td></tr>' +
-        '</tbody></table></div></div>';
+      return sections ? '<tr class="section"><td colspan="7">' + title + '</td></tr>' + sections : '';
     }).join('');
+
     main.innerHTML =
-      '<div class="page-head"><div><h1>General ledger</h1><div class="sub">Step 2 — journal entries posted to each account, with running balances.</div></div></div>' +
-      '<div class="toolbar"><label class="field">Account<select id="gl-acct"><option value="">All accounts with activity</option>' + accountOptions(glState.account) + '</select></label>' + pt.html + '</div>' +
-      (sections || '<div class="card empty">No activity in this period.</div>');
+      '<div class="page-head"><div><h1>General ledger</h1><div class="sub">Every account with its transactions and running balance — ready to print or export.</div></div>' +
+      '<div class="btn-row"><button id="gl-csv">Export CSV</button><button onclick="window.print()">Print / PDF</button></div></div>' +
+      '<div class="toolbar"><label class="field">Accounts<select id="gl-acct">' +
+      GL_FILTERS.map(([v, l]) => '<option value="' + v + '"' + (f === v ? ' selected' : '') + '>' + l + '</option>').join('') +
+      accountOptions(f.startsWith('@') ? '' : f) + '</select></label>' + pt.html + '</div>' +
+      '<div class="card">' +
+      '<div class="statement" style="max-width:none">' + stHead('General Ledger', fmtDate(r.from) + ' – ' + fmtDate(r.to)) +
+      (body ? '<div class="table-wrap"><table class="gl-table"><thead><tr><th style="width:110px">Date</th><th style="width:70px">Ref</th><th>Description</th><th>Account</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>' +
+        body + '</tbody></table></div><p class="small muted" style="margin-top:10px">' + accountsShown + ' accounts. Balances are shown in each account’s normal direction; amounts in parentheses are opposite to normal.</p>'
+        : '<div class="empty">No activity in this period.</div>') +
+      '</div></div>';
     pt.bind(main);
     $('#gl-acct').onchange = (e) => { glState.account = e.target.value; rerender(); };
+    $('#gl-csv').onclick = () => exportTableCSV('.gl-table', 'general-ledger-' + r.from + '-to-' + r.to + '.csv');
     $$('tr[data-entry]').forEach((tr) => tr.onclick = () => editEntry(tr.dataset.entry));
   }
 
-  // ---------------------------------------------------------------------------
-  // 3. Trial balance (with worksheet)
-  // ---------------------------------------------------------------------------
-
-  const tbState = { asOf: null, mode: 'worksheet' };
-
-  function renderTrial() {
-    const asOf = tbState.asOf || today();
-    const modes = [['worksheet', 'Worksheet'], ['unadjusted', 'Unadjusted'], ['adjusted', 'Adjusted'], ['post-closing', 'Post-closing']];
-    let content;
-    if (tbState.mode === 'worksheet') {
-      const un = L.trialBalance(book, asOf, 'unadjusted');
-      const ad = L.trialBalance(book, asOf, 'adjusted');
-      const pc = L.trialBalance(book, asOf, 'post-closing');
-      const ids = new Set([...un.rows, ...ad.rows, ...pc.rows].map((r) => r.account.id));
-      const get = (tb, id) => tb.rows.find((r) => r.account.id === id) || { debit: 0, credit: 0 };
-      const accts = L.orderAccounts(book.accounts).filter((a) => ids.has(a.id));
-      const tot = { adjDr: 0, adjCr: 0 };
-      const rows = accts.map((a) => {
-        const u = get(un, a.id), d = get(ad, a.id), p = get(pc, a.id);
-        const delta = (d.debit - d.credit) - (u.debit - u.credit);
-        if (delta > 0) tot.adjDr += delta; else tot.adjCr -= delta;
-        return '<tr><td>' + esc(a.name) + '</td><td class="num">' + amt(u.debit) + '</td><td class="num">' + amt(u.credit) + '</td>' +
-          '<td class="num">' + amt(delta > 0 ? delta : 0) + '</td><td class="num">' + amt(delta < 0 ? -delta : 0) + '</td>' +
-          '<td class="num">' + amt(d.debit) + '</td><td class="num">' + amt(d.credit) + '</td>' +
-          '<td class="num">' + amt(p.debit) + '</td><td class="num">' + amt(p.credit) + '</td></tr>';
-      }).join('');
-      content = '<div class="table-wrap"><table><thead><tr><th rowspan="2">Account</th><th colspan="2" class="num">Unadjusted TB</th><th colspan="2" class="num">Adjustments</th><th colspan="2" class="num">Adjusted TB</th><th colspan="2" class="num">Post-closing TB</th></tr>' +
-        '<tr>' + '<th class="num">Dr</th><th class="num">Cr</th>'.repeat(4) + '</tr></thead><tbody>' + (rows || '<tr><td colspan="9" class="empty">No balances yet.</td></tr>') + '</tbody>' +
-        '<tfoot><tr class="total"><td>Totals</td><td class="num">' + money(un.totalDebit) + '</td><td class="num">' + money(un.totalCredit) + '</td><td class="num">' + money(tot.adjDr) + '</td><td class="num">' + money(tot.adjCr) + '</td>' +
-        '<td class="num">' + money(ad.totalDebit) + '</td><td class="num">' + money(ad.totalCredit) + '</td><td class="num">' + money(pc.totalDebit) + '</td><td class="num">' + money(pc.totalCredit) + '</td></tr></tfoot></table></div>';
-      content = balanceNotice(un.balanced && ad.balanced && pc.balanced) + content;
-    } else {
-      const tb = L.trialBalance(book, asOf, tbState.mode);
-      const temp = tb.rows.some((r) => L.isTemporary(r.account));
-      content = balanceNotice(tb.balanced) +
-        (tbState.mode === 'post-closing' && temp ? '<div class="notice warn">Income and expense accounts still carry balances — close the period through ' + fmtDate(asOf) + ' to get a true post-closing trial balance.</div>' : '') +
-        '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>' +
-        tb.rows.map((r) => '<tr><td>' + esc(r.account.name) + '</td><td>' + classBadge(r.account) + '</td><td class="num">' + amt(r.debit) + '</td><td class="num">' + amt(r.credit) + '</td></tr>').join('') +
-        '</tbody><tfoot><tr class="total"><td colspan="2">Totals</td><td class="num">' + money(tb.totalDebit) + '</td><td class="num">' + money(tb.totalCredit) + '</td></tr></tfoot></table></div>';
-    }
-    main.innerHTML =
-      '<div class="page-head"><div><h1>Trial balance</h1><div class="sub">Step 3 — proves total debits equal total credits. The worksheet shows unadjusted → adjustments → adjusted → post-closing.</div></div>' +
-      '<div class="btn-row"><button onclick="window.print()">Print</button></div></div>' +
-      '<div class="toolbar"><label class="field">As of<input type="date" id="tb-date" value="' + asOf + '"></label>' +
-      '<div class="segmented">' + modes.map(([m, l]) => '<button data-mode="' + m + '" class="' + (tbState.mode === m ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
-      '<div class="card">' + content + '</div>';
-    $('#tb-date').onchange = (e) => { tbState.asOf = e.target.value; rerender(); };
-    $$('[data-mode]').forEach((b) => b.onclick = () => { tbState.mode = b.dataset.mode; rerender(); });
+  function exportTableCSV(selector, filename) {
+    const rows = $$(selector + ' tr').map((tr) => $$('th, td', tr).map((td) => '"' + td.textContent.trim().replace(/"/g, '""') + '"').join(','));
+    download(filename, rows.join('\n'), 'text/csv');
   }
 
-  function balanceNotice(ok) {
-    return ok ? '<div class="notice ok">✓ In balance — total debits equal total credits.</div>' : '<div class="notice err">✕ Out of balance. Check the journal for errors.</div>';
+  // ---------------------------------------------------------------------------
+  // People — receivables (they owe me) and payables (I owe them)
+  // ---------------------------------------------------------------------------
+
+  const peopleState = { preset: 'all' };
+
+  function renderPeople(params) {
+    const personId = params.get('person');
+    if (personId && (book.people || []).some((p) => p.id === personId)) return renderPersonStatement(personId);
+    const t = today();
+    const sum = L.peopleSummary(book, t).sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || a.person.name.localeCompare(b.person.name));
+    const showArch = !!prefs.showArchivedPeople;
+    const list = sum.filter((x) => showArch || !x.person.archived);
+    const totOwed = sum.reduce((s, x) => s + x.owedToMe, 0), totIOwe = sum.reduce((s, x) => s + x.iOwe, 0);
+    main.innerHTML =
+      '<div class="page-head"><div><h1>People</h1><div class="sub">Money other people owe you (receivables) and money you owe them (payables), person by person.</div></div>' +
+      '<div class="btn-row"><button onclick="window.print()">Print / PDF</button><button id="p-add">+ Add person</button><button class="primary" id="p-record">Record lend / borrow / repayment</button></div></div>' +
+      '<div class="kpis">' +
+      '<div class="kpi"><div class="label">Owed to me (receivables)</div><div class="value pos">' + money(totOwed) + '</div><div class="hint">' + sum.filter((x) => x.owedToMe).length + ' people</div></div>' +
+      '<div class="kpi"><div class="label">I owe (payables)</div><div class="value neg">' + money(totIOwe) + '</div><div class="hint">' + sum.filter((x) => x.iOwe).length + ' people</div></div>' +
+      '<div class="kpi"><div class="label">Net position</div><div class="value">' + money(totOwed - totIOwe, { parens: true }) + '</div><div class="hint">' + (totOwed >= totIOwe ? 'Others owe you more' : 'You owe others more') + '</div></div>' +
+      '</div>' +
+      '<div class="card">' +
+      (list.length ? '<div class="table-wrap"><table><thead><tr><th>Person</th><th class="num">Owes me</th><th class="num">I owe</th><th class="num">Net</th><th>Status</th><th>Last activity</th><th class="no-print"></th></tr></thead><tbody>' +
+        list.map((x) => '<tr class="click" data-href="#/people?person=' + x.person.id + '"><td><b>' + esc(x.person.name) + '</b>' + (x.person.notes ? '<div class="small muted">' + esc(x.person.notes) + '</div>' : '') + (x.person.archived ? ' <span class="badge">Archived</span>' : '') + '</td>' +
+          '<td class="num">' + amt(x.owedToMe) + '</td><td class="num">' + amt(x.iOwe) + '</td>' +
+          '<td class="num ' + (x.net > 0 ? 'pos' : x.net < 0 ? 'neg' : '') + '"><b>' + money(x.net, { parens: true }) + '</b></td>' +
+          '<td>' + (x.net > 0 ? '<span class="badge cash">Owes you</span>' : x.net < 0 ? '<span class="badge liab">You owe</span>' : '<span class="badge">Settled</span>') + '</td>' +
+          '<td>' + (x.lastActivity ? fmtDate(x.lastActivity) : '<span class="muted">—</span>') + '</td>' +
+          '<td class="num no-print"><button class="link" data-rec="' + x.person.id + '">Record</button><button class="link" data-edit-person="' + x.person.id + '">Edit</button></td></tr>').join('') +
+        '</tbody><tfoot><tr class="total"><td>Total</td><td class="num">' + money(totOwed) + '</td><td class="num">' + money(totIOwe) + '</td><td class="num">' + money(totOwed - totIOwe, { parens: true }) + '</td><td colspan="3"></td></tr></tfoot></table></div>'
+        : '<div class="empty">No one yet. Add the people you lend to or borrow from — friends, family, a co-worker who split a bill.</div>') +
+      '<div class="btn-row no-print" style="margin-top:10px"><label class="small"><input type="checkbox" id="p-arch"' + (showArch ? ' checked' : '') + '> Show archived</label></div>' +
+      '</div>' +
+      '<div class="card no-print"><h2>How it works</h2><p class="small muted">Each person gets a <b>Receivable – name</b> account (an asset: they owe you) and a <b>Payable – name</b> account (a liability: you owe them). ' +
+      'Use <b>Record</b> here, or pick those accounts in the Bank register — e.g. a BDO payment to “Receivable – Juan” when you lend Juan money, and a deposit from it when he pays you back. ' +
+      'They appear on the balance sheet under Receivables and Payables, so your net worth always includes them.</p></div>';
+    bindRowLinks();
+    $('#p-add').onclick = () => openPersonDialog();
+    $('#p-record').onclick = () => openPersonTxDialog({});
+    $('#p-arch').onchange = (e) => { prefs.showArchivedPeople = e.target.checked; savePrefs(); rerender(); };
+    $$('[data-rec]').forEach((b) => b.onclick = () => openPersonTxDialog({ personId: b.dataset.rec }));
+    $$('[data-edit-person]').forEach((b) => b.onclick = () => openPersonDialog(b.dataset.editPerson));
+  }
+
+  function renderPersonStatement(personId) {
+    const p = book.people.find((x) => x.id === personId);
+    const pt = periodToolbar(peopleState, rerender);
+    const r = pt.range;
+    const before = L.personStatement(book, personId, { to: L.addDays(r.from, -1) });
+    const opening = before.length ? before[before.length - 1].net : 0;
+    const rows = L.personStatement(book, personId, { from: r.from, to: r.to });
+    const s = L.peopleSummary(book, r.to).find((x) => x.person.id === personId);
+    const describe = (x) => x.receivable > 0 ? 'Lent / paid for them' : x.receivable < 0 ? 'They paid me back' : x.payable > 0 ? 'Borrowed / they paid for me' : 'I paid them back';
+    main.innerHTML =
+      '<div class="page-head"><div><a href="#/people" class="small no-print">← All people</a><h1>' + esc(p.name) + '</h1><div class="sub">Statement of account</div></div>' +
+      '<div class="btn-row"><button id="ps-csv">Export CSV</button><button onclick="window.print()">Print / PDF</button><button id="ps-edit">Edit</button><button class="primary" id="ps-rec">Record transaction</button></div></div>' +
+      '<div class="kpis">' +
+      '<div class="kpi"><div class="label">Owes me</div><div class="value">' + money(s.owedToMe) + '</div><div class="hint">' + esc(s.accounts.receivable ? s.accounts.receivable.name : '') + '</div></div>' +
+      '<div class="kpi"><div class="label">I owe</div><div class="value">' + money(s.iOwe) + '</div><div class="hint">' + esc(s.accounts.payable ? s.accounts.payable.name : '') + '</div></div>' +
+      '<div class="kpi hero"><div class="label">Net balance (' + fmtDate(r.to) + ')</div><div class="value">' + money(Math.abs(s.net)) + '</div><div class="hint">' + (s.net > 0 ? esc(p.name) + ' owes you' : s.net < 0 ? 'You owe ' + esc(p.name) : 'Settled') + '</div></div>' +
+      '</div>' +
+      '<div class="toolbar">' + pt.html + '</div>' +
+      '<div class="card"><div class="statement" style="max-width:none">' + stHead('Statement of Account — ' + p.name, fmtDate(r.from) + ' – ' + fmtDate(r.to)) +
+      '<div class="table-wrap"><table class="ps-table"><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Paid / received through</th><th class="num">They owe me (+)</th><th class="num">I owe them (−)</th><th class="num">Net balance</th></tr></thead><tbody>' +
+      '<tr class="muted"><td>' + fmtDate(L.addDays(r.from, -1)) + '</td><td>Beginning balance</td><td></td><td></td><td></td><td></td><td class="num">' + money(opening, { parens: true }) + '</td></tr>' +
+      rows.map((x) => '<tr class="click" data-entry="' + x.entry.id + '"><td>' + fmtDate(x.entry.date) + '</td><td>' + esc(x.entry.description || '—') + (x.entry.memo ? '<div class="small muted">' + esc(x.entry.memo) + '</div>' : '') + '</td>' +
+        '<td>' + describe(x) + '</td><td>' + x.counterIds.map((id) => esc(acctName(id))).join(', ') + '</td>' +
+        '<td class="num">' + (x.delta > 0 ? money(x.delta) : '') + '</td><td class="num">' + (x.delta < 0 ? money(-x.delta) : '') + '</td>' +
+        '<td class="num"><b>' + money(opening + x.net, { parens: true }) + '</b></td></tr>').join('') +
+      '<tr class="total"><td></td><td colspan="5">Ending balance — ' + (s.net > 0 ? esc(p.name) + ' owes you' : s.net < 0 ? 'you owe ' + esc(p.name) : 'settled') + '</td><td class="num">' + money(opening + (rows.length ? rows[rows.length - 1].net : 0), { parens: true }) + '</td></tr>' +
+      '</tbody></table></div></div></div>';
+    pt.bind(main);
+    $('#ps-rec').onclick = () => openPersonTxDialog({ personId });
+    $('#ps-edit').onclick = () => openPersonDialog(personId);
+    $('#ps-csv').onclick = () => exportTableCSV('.ps-table', 'statement-' + p.name.replace(/\W+/g, '-') + '-' + r.to + '.csv');
+    $$('tr[data-entry]').forEach((tr) => tr.onclick = () => openJournalDialog({ entry: book.entries.find((e) => e.id === tr.dataset.entry) }));
+  }
+
+  function openPersonDialog(id) {
+    const p = id ? book.people.find((x) => x.id === id) : null;
+    const pa = p ? L.personAccounts(book, p.id) : null;
+    const used = pa && book.entries.some((e) => e.lines.some((l) => l.accountId === (pa.receivable || {}).id || l.accountId === (pa.payable || {}).id));
+    showDialog(p ? 'Edit person' : 'Add person',
+      '<div class="form-grid"><label class="field full">Name<input id="pp-name" value="' + esc(p ? p.name : '') + '" placeholder="e.g. Juan dela Cruz, Mom, Office mate"></label>' +
+      '<label class="field full">Notes<input id="pp-notes" value="' + esc(p && p.notes || '') + '" placeholder="Phone, relationship, agreement…"></label></div>' +
+      (p ? '' : '<p class="small muted" style="margin-top:10px">Creates two accounts: “Receivable – name” (they owe you) and “Payable – name” (you owe them).</p>'),
+      [p ? (used ? '<button class="danger" data-act="archive">' + (p.archived ? 'Unarchive' : 'Archive') + '</button>' : '<button class="danger" data-act="delete">Delete</button>') : '',
+        '<button data-act="cancel">Cancel</button><button class="primary" data-act="save">Save</button>']);
+    $('#pp-name', dialog).focus();
+    dialogAction('cancel', closeDialog);
+    dialogAction('save', () => {
+      const name = $('#pp-name', dialog).value.trim(), notes = $('#pp-notes', dialog).value.trim();
+      if (!name) return dialogError('Name is required.');
+      try {
+        if (p) {
+          if (book.people.some((x) => x !== p && x.name.toLowerCase() === name.toLowerCase())) throw new Error(name + ' is already in your list.');
+          L.renamePerson(book, p.id, name); p.notes = notes || undefined;
+        } else L.addPerson(book, name, notes);
+      } catch (err) { return dialogError(err.message); }
+      closeDialog(); commit(); toast(p ? 'Saved' : 'Added ' + name);
+    });
+    dialogAction('archive', () => {
+      p.archived = !p.archived;
+      [pa.receivable, pa.payable].forEach((a) => { if (a) a.archived = p.archived; });
+      closeDialog(); commit();
+    });
+    dialogAction('delete', () => {
+      if (!confirm('Delete ' + p.name + '?')) return;
+      book.people = book.people.filter((x) => x !== p);
+      book.accounts = book.accounts.filter((a) => a.personId !== p.id);
+      closeDialog(); location.hash = '#/people'; commit();
+    });
+  }
+
+  const PERSON_TX = {
+    lend: { label: 'I lent money / paid for them', hint: 'They owe you more.', side: 'receivable', dir: 'debit', via: 'Paid from' },
+    collect: { label: 'They paid me back', hint: 'They owe you less.', side: 'receivable', dir: 'credit', via: 'Received into' },
+    borrow: { label: 'I borrowed / they paid for me', hint: 'You owe them more.', side: 'payable', dir: 'credit', via: 'Received into / spent on' },
+    repay: { label: 'I paid them back', hint: 'You owe them less.', side: 'payable', dir: 'debit', via: 'Paid from' },
+  };
+
+  function openPersonTxDialog(opts) {
+    const people = (book.people || []).filter((p) => !p.archived || p.id === opts.personId);
+    if (!people.length) { openPersonDialog(); return; }
+    let type = opts.type || 'lend';
+    const render = () => {
+      const tt = PERSON_TX[type];
+      // "They paid for me": the other side is usually an expense. Otherwise a bank, card or cash account.
+      const viaPred = type === 'borrow' ? (a) => !a.personId && (isBalanceSheet(a) || a.type === 'expense')
+        : type === 'lend' ? (a) => !a.personId && (isBalanceSheet(a) || a.type === 'income')
+          : (a) => !a.personId && isBalanceSheet(a);
+      showDialog('Record with a person',
+        '<div class="segmented" style="margin-bottom:14px;flex-wrap:wrap">' + Object.entries(PERSON_TX).map(([k, v]) =>
+          '<button data-pt="' + k + '" class="' + (k === type ? 'on' : '') + '">' + v.label + '</button>').join('') + '</div>' +
+        '<div class="form-grid">' +
+        '<label class="field">Person<select id="pt-person">' + people.map((p) => '<option value="' + p.id + '"' + (p.id === opts.personId ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></label>' +
+        '<label class="field">' + tt.via + '<select id="pt-via">' + accountOptions(opts.viaId, viaPred, { placeholder: 'Choose account…' }) + '</select></label>' +
+        '<label class="field">Amount<input id="pt-amt" inputmode="decimal" placeholder="0.00" value="' + centsToInput(opts.amount) + '"></label>' +
+        '<label class="field">Date<input id="pt-date" type="date" value="' + (opts.date || today()) + '"></label>' +
+        '<label class="field full">Description<input id="pt-desc" value="' + esc(opts.description || '') + '" placeholder="e.g. Lent for tuition, Shared dinner bill"></label>' +
+        '</div><p class="small muted" style="margin-top:10px" id="pt-explain">' + tt.hint + '</p>',
+        ['', '<button data-act="cancel">Cancel</button><button class="primary" data-act="save">Save</button>']);
+      $$('[data-pt]', dialog).forEach((b) => b.onclick = () => { capture(); type = b.dataset.pt; render(); });
+      const explain = () => {
+        const p = book.people.find((x) => x.id === $('#pt-person', dialog).value);
+        const via = acct($('#pt-via', dialog).value), a = L.toCents($('#pt-amt', dialog).value);
+        const pa = L.personAccounts(book, p.id), side = pa[tt.side];
+        $('#pt-explain', dialog).textContent = tt.hint + (via && a > 0 ? ' Journal entry: ' + (tt.dir === 'debit'
+          ? 'Dr ' + side.name + ' / Cr ' + via.name : 'Dr ' + via.name + ' / Cr ' + side.name) + ' ' + money(a) + '.' : '');
+      };
+      ['#pt-person', '#pt-via', '#pt-amt'].forEach((sel) => $(sel, dialog).addEventListener('input', explain));
+      explain();
+      dialogAction('cancel', closeDialog);
+      dialogAction('save', () => {
+        capture();
+        const p = book.people.find((x) => x.id === opts.personId);
+        const via = acct(opts.viaId), amount = opts.amount;
+        if (!via) return dialogError('Choose the account the money went through.');
+        if (!amount || amount < 0) return dialogError('Enter a valid amount.');
+        const side = L.personAccounts(book, p.id)[tt.side];
+        const lines = tt.dir === 'debit'
+          ? [{ accountId: side.id, debit: amount, credit: 0 }, { accountId: via.id, debit: 0, credit: amount }]
+          : [{ accountId: via.id, debit: amount, credit: 0 }, { accountId: side.id, debit: 0, credit: amount }];
+        const kind = via.type === 'expense' ? 'expense' : via.type === 'income' ? 'income' : 'transfer';
+        try { L.postEntry(book, { date: opts.date, description: opts.description || tt.label + ' — ' + p.name, kind, lines }); }
+        catch (err) { return dialogError(err.message); }
+        closeDialog(); commit(); toast('Saved for ' + p.name);
+      });
+    };
+    const capture = () => {
+      opts.personId = $('#pt-person', dialog).value;
+      opts.viaId = $('#pt-via', dialog).value;
+      opts.amount = L.toCents($('#pt-amt', dialog).value) || 0;
+      opts.date = $('#pt-date', dialog).value;
+      opts.description = $('#pt-desc', dialog).value.trim();
+    };
+    render();
   }
 
   // ---------------------------------------------------------------------------
@@ -1343,7 +1465,7 @@
     const closed = L.closedThrough(book);
     const recent = L.sortedEntries(L.selectEntries(book, { kinds: ['adjusting'], filter: (e) => !closed || e.date > closed })).reverse();
     main.innerHTML =
-      '<div class="page-head"><div><h1>Adjustments</h1><div class="sub">Step 4 — bring balances up to date before preparing statements: mark investments and assets to market value, record depreciation, accruals and corrections.</div></div>' +
+      '<div class="page-head"><div><h1>Adjustments</h1><div class="sub">Bring balances up to date before preparing statements: mark investments and assets to market value, record depreciation, accruals and corrections.</div></div>' +
       '<div class="btn-row"><button class="primary" id="add-adj">+ Adjusting journal entry</button></div></div>' +
       '<div class="card"><h2>Revalue investments &amp; assets to market</h2>' +
       '<div class="toolbar"><label class="field">Valuation date<input type="date" id="adj-date" value="' + date + '"></label></div>' +
@@ -1434,7 +1556,7 @@
     else if (stState.tab === 'balance') content = balanceSheetHTML(r.to);
     else content = cashFlowHTML(r);
     main.innerHTML =
-      '<div class="page-head"><div><h1>Financial statements</h1><div class="sub">Step 5 — prepared from the adjusted balances.</div></div>' +
+      '<div class="page-head"><div><h1>Financial statements</h1><div class="sub">Income statement, balance sheet and cash flow — ready to print or export.</div></div>' +
       '<div class="btn-row"><button id="st-csv">Export CSV</button><button onclick="window.print()">Print / PDF</button></div></div>' +
       '<div class="toolbar"><div class="segmented">' + tabs.map(([k, l]) => '<button data-tab="' + k + '" class="' + (stState.tab === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
       pt.html + '</div>' +
@@ -1448,7 +1570,7 @@
   }
 
   function stHead(title, sub) {
-    return '<div class="st-head"><div class="muted small">Personal financial statements</div><div class="title">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div></div>';
+    return '<div class="st-head"><div class="muted small">' + esc(book.ownerName ? book.ownerName + ' — personal financial statements' : 'Personal financial statements') + '</div><div class="title">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div></div>';
   }
   function line(label, cents, cls, opts) {
     opts = opts || {};
@@ -1483,12 +1605,13 @@
     h += line('Assets', null, 'section');
     const grp = (label, list, total) => list.length ? line(label, null, 'subtotal', { indent: 'indent' }) + rows(list) + line('Total ' + label.toLowerCase(), total, 'rule', { indent: 'indent' }) : '';
     h += grp('Cash & cash equivalents', bs.assets.cash, bs.totals.cash);
-    h += grp('Receivables', bs.assets.receivables, bs.totals.receivables);
+    h += grp('Receivables (owed to me)', bs.assets.receivables.filter((x) => x.amount !== 0 || !x.account.personId), bs.totals.receivables);
     h += grp('Investments', bs.assets.investments, bs.totals.investments);
     h += grp('Other assets', bs.assets.otherAssets, bs.totals.otherAssets);
     h += line('Total assets', bs.totals.assets, 'total double');
     h += line('Liabilities', null, 'section');
     h += grp('Credit cards', bs.liabilities.creditCards, bs.totals.creditCards);
+    h += grp('Payables (owed to people)', bs.liabilities.payables.filter((x) => x.amount !== 0 || !x.account.personId), bs.totals.payables);
     h += grp('Loans & other liabilities', bs.liabilities.loans, bs.totals.loans);
     h += line('Total liabilities', bs.totals.liabilities, 'subtotal rule');
     h += line('Net worth (equity)', null, 'section');
@@ -1512,9 +1635,12 @@
       : x.account.type === 'expense' ? 'Paid: ' + x.account.name
         : L.classify(x.account) === 'credit_card' ? (x.amount < 0 ? 'Credit card payments: ' : 'Credit card cash advances: ') + x.account.name
           : x.account.name;
-    const invLabel = (x) => (x.amount < 0 ? 'Purchase of / contribution to ' : 'Sale of / withdrawal from ') + x.account.name;
+    const person = (x) => (book.people || []).find((p) => p.id === x.account.personId);
+    const invLabel = (x) => person(x) ? (x.amount < 0 ? 'Money lent to ' : 'Collected from ') + person(x).name
+      : (x.amount < 0 ? 'Purchase of / contribution to ' : 'Sale of / withdrawal from ') + x.account.name;
     const finLabel = (x) => x.account.type === 'equity' ? 'Opening balances recorded'
-      : (x.amount < 0 ? 'Repayment of ' : 'Proceeds from ') + x.account.name;
+      : person(x) ? (x.amount < 0 ? 'Repaid to ' : 'Borrowed from ') + person(x).name
+        : (x.amount < 0 ? 'Repayment of ' : 'Proceeds from ') + x.account.name;
     let h = '<div class="statement">' + stHead('Statement of Cash Flows', 'For the period ' + fmtDate(r.from) + ' – ' + fmtDate(r.to) + ' · direct method') + '<table><tbody>';
     h += sec('Operating activities', cf.operating, cf.totals.operating, opLabel);
     h += sec('Investing activities', cf.investing, cf.totals.investing, invLabel);
@@ -1546,13 +1672,13 @@
     const closings = L.sortedEntries(L.selectEntries(book, { kinds: ['closing'] })).reverse();
     const check = (ok, text) => '<li style="margin-bottom:6px">' + (ok ? '✅' : '⬜') + ' ' + text + '</li>';
     main.innerHTML =
-      '<div class="page-head"><div><h1>Close the period</h1><div class="sub">Step 6 — closing entries zero out income and expense accounts and move net income into Retained Earnings. Closed periods are locked.</div></div></div>' +
+      '<div class="page-head"><div><h1>Close the period</h1><div class="sub">Closing entries zero out income and expense accounts and move net income into Retained Earnings. Closed periods are locked.</div></div></div>' +
       '<div class="grid grid-2">' +
       '<div class="card"><h2>Close the books</h2>' +
       (closed ? '<div class="notice ok">Books are closed through <b>' + fmtDate(closed) + '</b>.</div>' : '<div class="notice warn">No period has been closed yet.</div>') +
       '<div class="toolbar"><label class="field">Close through<input type="date" id="cl-date" value="' + date + '"></label></div>' +
       '<ul style="list-style:none;padding:0;margin:0 0 12px">' +
-      check(tbAdj.balanced, 'Adjusted trial balance is in balance (' + money(tbAdj.totalDebit) + ')') +
+      check(tbAdj.balanced, 'Books are in balance (debits = credits: ' + money(tbAdj.totalDebit) + ')') +
       check(adjCount > 0, adjCount + ' adjusting entr' + (adjCount === 1 ? 'y' : 'ies') + ' this period — <a href="#/adjust">review adjustments</a>') +
       check(true, '<a href="#/statements">Prepare statements</a> before closing') +
       '</ul>' +
@@ -1571,8 +1697,8 @@
         }).join('') + '</tbody></table></div>' +
         '<div class="btn-row" style="margin-top:12px"><button class="danger" id="cl-reopen">Reopen ' + fmtDate(closed) + '</button><span class="small muted">Removes the latest closing entry so you can edit that period.</span></div>'
         : '<div class="empty small">No closings yet.</div>') +
-      '<h3 style="margin-top:18px">What closing does</h3><p class="small muted">Income and expense accounts are temporary: they measure one period. Closing debits each income account and credits each expense account for its balance, with the difference (net income) credited to Retained Earnings. After closing, only permanent accounts — assets, liabilities and equity — carry balances, which you can verify on the post-closing trial balance.</p>' +
-      '<a href="#/trial" class="small">View post-closing trial balance →</a></div>' +
+      '<h3 style="margin-top:18px">What closing does</h3><p class="small muted">Income and expense accounts are temporary: they measure one period. Closing debits each income account and credits each expense account for its balance, with the difference (net income) credited to Retained Earnings. After closing, only permanent accounts — assets, liabilities and equity — carry balances.</p>' +
+      '</div>' +
       '</div>';
     $('#cl-date').onchange = (e) => { closeState.date = e.target.value; rerender(); };
     const post = $('#cl-post');
@@ -1598,6 +1724,7 @@
       '<div class="grid grid-2">' +
       '<div class="card"><h2>Preferences</h2><div class="form-grid">' +
       '<label class="field">Currency code<input id="s-cur" value="' + esc(book.currency) + '" maxlength="3" placeholder="USD, PHP, EUR…"></label>' +
+      '<label class="field full">Name on reports<input id="s-owner" value="' + esc(book.ownerName || '') + '" placeholder="e.g. Maria Santos — shown at the top of printed statements"></label>' +
       '<label class="field">Theme<select id="s-theme"><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>' +
       '</div></div>' +
       '<div class="card"><h2>Backup</h2><div class="btn-row">' +
@@ -1609,6 +1736,7 @@
       '<div class="card"><h2>Reset</h2><p class="small muted">Erase all accounts and transactions in this browser.</p><button class="danger" id="s-reset">Erase everything</button></div>' +
       '</div>';
     $('#s-theme').value = prefs.theme || '';
+    $('#s-owner').onchange = (e) => { book.ownerName = e.target.value.trim() || undefined; commit(); toast('Saved'); };
     $('#s-theme').onchange = (e) => { prefs.theme = e.target.value; savePrefs(); applyTheme(); };
     $('#s-cur').onchange = (e) => {
       const c = e.target.value.trim().toUpperCase();
@@ -1621,6 +1749,7 @@
       try {
         const b = JSON.parse(await f.text());
         if (!Array.isArray(b.accounts) || !Array.isArray(b.entries)) throw new Error('Not a ledger backup file.');
+        b.people = b.people || [];
         if (!confirm('Replace current data with ' + b.entries.length + ' entries from this backup?')) return;
         book = b; commit(); toast('Backup restored');
       } catch (err) { alert('Could not restore: ' + err.message); }
@@ -1718,6 +1847,18 @@
         post(L.revaluationEntry(b, 's_car', end, L.balanceOf(b, 's_car', { to: end }) - 15000, 'Depreciation of car to market value'));
       }
     });
+    const juan = L.addPerson(b, 'Juan dela Cruz', 'Office mate');
+    const mom = L.addPerson(b, 'Mom');
+    const ana = L.addPerson(b, 'Ana', 'Shared trip expenses');
+    const pj = L.personAccounts(b, juan.id), pm = L.personAccounts(b, mom.id), pa = L.personAccounts(b, ana.id);
+    const m0 = months[1] || months[0], m1 = months[2] || m0;
+    tx(m0 + '-06', 'Lent to Juan for tuition', 's_chk', pj.receivable.id, 'out', 500000);
+    tx(m1 + '-05', 'Juan partial repayment', 's_chk', pj.receivable.id, 'in', 200000);
+    tx(m0 + '-11', 'Borrowed from Mom for car repair', 's_chk', pm.payable.id, 'in', 1500000);
+    tx(m1 + '-11', 'Repaid Mom', 's_chk', pm.payable.id, 'out', 500000);
+    tx(m1 + '-03', 'Paid Ana\'s share of hotel', 's_mc', pa.receivable.id, 'out', 420000);
+    if (m1 + '-04' <= t) post({ date: m1 + '-04', kind: 'expense', description: 'Ana paid my share of dinner', lines: [
+      { accountId: 'exp_dining', debit: 180000, credit: 0 }, { accountId: pa.payable.id, debit: 0, credit: 180000 }] });
     if (months.length >= 2) {
       const firstEnd = L.monthEnd(+months[0].slice(0, 4), +months[0].slice(5, 7) - 1);
       try { L.closePeriod(b, firstEnd); } catch (e) { /* nothing to close */ }

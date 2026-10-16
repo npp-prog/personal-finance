@@ -1,6 +1,6 @@
 # Personal Finance Ledger
 
-A personal finance app built on real double-entry accounting. You record each transaction on whichever card or account it happened on, and the app runs the complete accounting cycle to produce a **Profit & Loss statement**, a **Balance Sheet (net worth)** and a **Cash Flow Statement**.
+A personal finance app built on real double-entry accounting. You encode each bank and card transaction in a register, much like QuickBooks Online, and track who owes you and whom you owe. The app produces a **Profit & Loss statement**, a **Balance Sheet (net worth)**, a **Cash Flow Statement** and a **General Ledger**.
 
 There's nothing to install and no build step, and your data never leaves your browser.
 
@@ -54,23 +54,42 @@ Each line becomes a balanced journal entry. For example, a 1,500 grocery payment
 
 You can also use **Import CSV** in the register when your bank offers a CSV download. The **All transactions** page lists entries across every account.
 
-## The accounting cycle
+## People — receivables and payables per person
 
-1. **General journal**: every transaction as a balanced debit/credit entry. Unbalanced entries are rejected.
-2. **General ledger**: entries posted to each account, with beginning and running balances.
-3. **Trial balance**: unadjusted, adjusted and post-closing views, plus a full worksheet (Unadjusted → Adjustments → Adjusted → Post-closing).
-4. **Adjustments**:
-   * Revalue investments and assets to market value. The gain or loss goes to *Market Value Gains (Losses)*.
-   * Templates for depreciation, accrued interest, accrued income and prepaid expenses.
-5. **Financial statements** for any period, with Print/PDF and CSV export:
-   * **Income statement (P&L)**: income, expenses, operating surplus, other income (market value changes), net income and savings rate.
-   * **Balance sheet**: cash, investments, other assets, credit cards and loans, with net worth broken down into opening equity, retained earnings and unclosed net income.
-   * **Cash flow statement** (direct method):
-     * **Operating**: income received, expenses paid in cash, credit card payments.
-     * **Investing**: buying and selling investments and assets.
-     * **Financing**: loan proceeds and repayments, opening balances.
-     * It reconciles to the change in cash.
-6. **Close the period**: a closing entry zeroes income and expenses into *Retained Earnings*, and the period is then locked. **Reopen** removes the latest closing entry.
+The **People** page tracks money that specific people owe you and money you owe them.
+
+* Adding a person creates two accounts:
+  * **Receivable – name**: an asset, money they owe you.
+  * **Payable – name**: a liability, money you owe them.
+* **Record lend / borrow / repayment** covers four cases:
+  * **I lent money / paid for them**: *Dr Receivable – name / Cr bank or card*.
+  * **They paid me back**: *Dr bank / Cr Receivable – name*.
+  * **I borrowed / they paid for me**: *Dr bank or expense / Cr Payable – name*. If a friend paid for your dinner, the expense is still yours.
+  * **I paid them back**: *Dr Payable – name / Cr bank*.
+* You can also pick those accounts directly in the Bank register.
+* The People page shows, for each person, what they owe you, what you owe them, the net, and the last activity.
+* Each person has a printable **statement of account** with a running balance.
+* On the **balance sheet** they appear under *Receivables (owed to me)* and *Payables (owed to people)*.
+* On the **cash flow statement**, money lent and collected is investing, and money borrowed and repaid is financing.
+
+## Reports for presentation
+
+* **Financial statements**, for any period:
+  * **Income statement (P&L)**: income, expenses, operating surplus, market value changes, net income and savings rate.
+  * **Balance sheet (net worth)**: cash, receivables, investments, other assets, credit cards, payables, loans and net worth.
+  * **Cash flow statement** (direct method): operating, investing and financing. It reconciles to the change in cash.
+* **General ledger**: every account with its transactions, the other account in each entry, and a running balance. You can filter it to balance sheet accounts, income & expense accounts, people, or a single account.
+* Every report has **Print / PDF** and **Export CSV**. Printing hides the menus and buttons.
+* Set **Settings → Name on reports** to put your name on the printed statements.
+
+## Period end
+
+* **Revalue & adjust**:
+  * Mark investments, property and vehicles to market value.
+  * Post depreciation and accruals.
+* **Close the period**:
+  * Moves net income into Retained Earnings and locks the period.
+  * **Reopen** undoes the latest close.
 
 ## Data & backup
 
@@ -83,7 +102,7 @@ You can also use **Import CSV** in the register when your bank offers a CSV down
 ```
 index.html        app shell
 css/styles.css    styles (light and dark)
-js/ledger.js      accounting engine: entries, balances, trial balance, closing, statements, CSV parsing
+js/ledger.js      accounting engine: entries, balances, people, closing, statements, CSV parsing
 js/app.js         UI
 tests/            engine unit tests (node:test)
 ```
