@@ -12,7 +12,33 @@ Open `index.html` in a browser. You can also serve the folder:
 npm start            # python3 -m http.server 8080 → http://localhost:8080
 ```
 
-To explore with demo data, go to **Settings & backup → Load sample data**.
+### Practice mode (trial data)
+
+Open **🧪 Practice mode** from the menu to try things on temporary data. You can start with:
+
+* **Blank books**: empty, with the default categories.
+* **Sample data**: three months of demo accounts, cards, people and transactions.
+* **A copy of my books**: your real data, to experiment on safely.
+
+While practice mode is on:
+
+* A yellow banner shows on every page.
+* Printed statements are stamped *"Practice data — not real figures"*.
+* Your real books are stored separately and never touched.
+
+**Exit practice & discard** deletes the practice data and brings your real books back. If you want to keep something you made in practice, use **Settings → Export backup** before leaving.
+
+### On a tablet
+
+The app is built for touch on iPads and Android tablets:
+
+* **Upright:**
+  * The menu is a slide-out drawer.
+  * A **bottom tab bar** holds Home, Register, People, Reports and Menu, with a **+ Encode** button at the top.
+  * The Bank register turns into a stacked entry form with two-line transaction cards, so there's no sideways scrolling.
+* **Sideways:** the full register table fits next to a slimmer sidebar.
+* **Touch:** buttons and fields are at least 44px tall, and input text is 16px, so iPad Safari doesn't zoom in when you tap a field.
+* **Home screen:** use **Share → Add to Home Screen** for a full-screen, app-like experience.
 
 ## How accounts are classified
 

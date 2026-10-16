@@ -115,6 +115,7 @@ p { margin: 0 0 10px; }
 .nav a.active { background: var(--accent-soft); color: var(--accent); }
 .step { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid currentColor; font-size: 10px; font-weight: 700; flex: none; }
 .app > div { min-width: 0; }
+.mobile-bar .bar-action { padding: 7px 12px; }
 .main { padding: 24px 28px 60px; min-width: 0; max-width: 1280px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-head .sub { color: var(--text-2); margin-top: 4px; }
@@ -160,10 +161,13 @@ label.field > input, label.field > select, label.field > textarea { font-size: 1
 .form-grid .full { grid-column: 1 / -1; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
 .toolbar label.field { min-width: 130px; }
-.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.segmented { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
 .segmented button { border: 0; border-radius: 0; border-right: 1px solid var(--border); }
 .segmented button:last-child { border-right: 0; }
 .segmented button.on { background: var(--accent-soft); color: var(--accent); }
+.dlg-body > .segmented { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); width: 100%; }
+.dlg-body > .segmented button { border-right: 0; border-bottom: 1px solid var(--border); justify-content: center; text-align: center; }
+.dlg-body > .segmented button:not(:last-child) { box-shadow: inset -1px 0 0 var(--border); }
 
 /* Tables */
 .table-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
@@ -237,6 +241,11 @@ dialog::backdrop { background: rgba(10, 10, 12, .45); }
 .lines-table input, .lines-table select { width: 100%; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; font-weight: 500; z-index: 100; box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
 
+/* Practice mode */
+.practice-banner { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--warn-bg); color: var(--warn-ink); border-bottom: 1px solid var(--border); padding: 10px 28px; position: sticky; top: 0; z-index: 30; }
+body.practice .brand-mark { background: #eda100; }
+.practice-stamp { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--warn-ink); background: var(--warn-bg); border: 1px dashed currentColor; border-radius: 4px; padding: 2px 8px; margin-bottom: 6px; }
+
 /* General ledger */
 .gl-table tr.gl-acct td { font-weight: 700; padding-top: 16px; border-bottom: 1px solid var(--text); }
 .gl-table td { border-bottom: 0; padding: 5px 10px; }
@@ -268,20 +277,96 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border)
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .cycle { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (max-width: 760px) {
+.scrim, .tabbar { display: none; }
+.c-mobile { display: none; }
+
+/* Landscape tablets / small laptops: slimmer sidebar so the register table fits */
+@media (max-width: 1280px) {
+  .app { grid-template-columns: 216px 1fr; }
+  .main { padding: 20px 20px 60px; }
+  .reg-table { min-width: 880px; }
+}
+
+/* Portrait tablets and phones: drawer menu + bottom tab bar */
+@media (max-width: 1024px) {
   .app { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; z-index: 50; left: 0; top: 0; width: 260px; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 30px rgba(0, 0, 0, .25); }
+  .sidebar { position: fixed; z-index: 60; left: 0; top: 0; width: 280px; height: 100%; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 30px rgba(0, 0, 0, .25); padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
   .app.nav-open .sidebar { transform: none; }
-  .mobile-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 40; font-weight: 700; }
-  .main { padding: 16px 16px 60px; }
+  .app.nav-open .scrim { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(10, 10, 12, .4); }
+  .mobile-bar { display: flex; align-items: center; gap: 12px; padding: 10px 20px; padding-top: calc(10px + env(safe-area-inset-top)); background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 40; font-weight: 700; font-size: 16px; }
+  .mobile-bar #bar-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .practice-banner { padding: 10px 20px; top: 57px; }
+  .main { padding: 18px 20px calc(96px + env(safe-area-inset-bottom)); max-width: none; }
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 58; background: var(--surface); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -2px 12px rgba(0, 0, 0, .05); }
+  .tabbar a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 60px; color: var(--muted); font-size: 12px; font-weight: 600; }
+  .tabbar a:hover { text-decoration: none; }
+  .tabbar a.active { color: var(--accent); }
+  .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .page-head { margin-bottom: 14px; }
+
+  /* Bank register: stacked entry form and two-line transaction cards */
+  .reg-table, .reg-table tbody { display: block; min-width: 0; width: 100%; }
+  .reg-table colgroup, .reg-table thead { display: none; }
+  .reg-table tr.r-new, .reg-table tr.r-edit { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; padding: 14px; margin-bottom: 12px; border-radius: 12px; background: var(--accent-soft); }
+  .reg-table tr.r-new td, .reg-table tr.r-edit td { display: block; padding: 0; border: 0; background: none; overflow: visible; white-space: normal; }
+  .reg-table tr.r-new td[data-label]::before, .reg-table tr.r-edit td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+  .reg-table .c-date, .reg-table .c-ref { grid-column: span 2; }
+  .reg-table .c-payee, .reg-table .c-acct { grid-column: span 2; }
+  .reg-table .c-memo { grid-column: 1 / -1; }
+  .reg-table .c-out, .reg-table .c-in { grid-column: span 2; }
+  .reg-table .c-act { grid-column: 1 / -1; text-align: left !important; display: flex !important; gap: 8px; flex-wrap: wrap; }
+  .reg-table .c-act button { flex: 1; justify-content: center; padding: 10px 12px !important; font-size: 15px !important; margin: 0 !important; }
+  .reg-table tr.r-new input, .reg-table tr.r-edit input { padding: 9px 10px; font-size: 16px; }
+  .reg-table tr.r-err { display: block; margin: -4px 0 12px; }
+  .reg-table tr.r-err td { display: block; padding: 0; background: none; }
+  .reg-table tr.r-row { display: block; border-bottom: 1px solid var(--border); }
+  .reg-table tr.r-row > td { display: none; }
+  .reg-table tr.r-row > td.c-mobile { display: block; padding: 12px 4px; border: 0; white-space: normal; }
+  .reg-table tr:not(.r-row):not(.r-new):not(.r-edit):not(.r-err) { display: block; }
+  .reg-table tr:not(.r-row):not(.r-new):not(.r-edit):not(.r-err) td { display: block; }
+  .m-top, .m-bot { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .m-payee { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-amt { font-weight: 650; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .m-out { color: var(--text); }
+  .m-in { color: var(--pos); }
+  .m-bot { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .m-bot span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-bot span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .reg-head .toolbar { width: 100%; }
+  .reg-head .toolbar label.field { flex: 1; }
+}
+
+@media (max-width: 760px) {
+  .mobile-bar { padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top)); }
+  .main { padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
+  .practice-banner { padding: 10px 16px; }
   .form-grid { grid-template-columns: 1fr; }
   .cycle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi .value { font-size: 19px; }
+  .reg-table .c-payee, .reg-table .c-acct { grid-column: 1 / -1; }
+  .bar-action { display: none; }
+}
+
+/* Touch screens: comfortable tap targets, no zoom-on-focus in iOS Safari */
+@media (pointer: coarse), (max-width: 1024px) {
+  button, .btn { min-height: 44px; padding: 9px 14px; }
+  button.link { min-height: 40px; padding: 6px 8px; }
+  input:not([type=checkbox]):not([type=radio]), select { min-height: 44px; font-size: 16px; }
+  input[type=checkbox] { width: 20px; height: 20px; vertical-align: -4px; margin-right: 6px; }
+  textarea { font-size: 16px; }
+  .nav a { padding: 12px 12px; font-size: 15px; }
+  td, th { padding: 11px 10px; }
+  .segmented { flex-wrap: wrap; }
+  .segmented button { min-height: 44px; }
+  .acct-tile { padding: 12px 16px; }
+  label.field { font-size: 13px; }
+  .lines-table input, .lines-table select { min-height: 44px; }
 }
 
 @media print {
-  .sidebar, .mobile-bar, .no-print, .toolbar, .page-head .btn-row, .toast, dialog { display: none !important; }
+  .sidebar, .mobile-bar, .tabbar, .scrim, .no-print, .toolbar, .page-head .btn-row, .toast, dialog { display: none !important; }
   .main:has(.statement) > .page-head { display: none; }
+  .practice-banner { display: none; }
   .statement tr.click { cursor: default; }
   .app { display: block; }
   .main { padding: 0; max-width: none; }

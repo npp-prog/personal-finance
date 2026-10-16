@@ -3,19 +3,29 @@
   'use strict';
   const L = window.Ledger;
   const STORAGE_KEY = 'pf-ledger-book-v1';
+  const PRACTICE_KEY = 'pf-ledger-practice-v1';
   const PREFS_KEY = 'pf-ledger-prefs-v1';
 
   // ---------------------------------------------------------------------------
   // State & persistence
   // ---------------------------------------------------------------------------
 
-  let book = load();
-  book.people = book.people || [];
   let prefs = loadPrefs();
+  let book = load();
 
-  function load() {
+  // Practice mode keeps a separate, temporary book under its own key; the real one is never touched.
+  function isPractice() { return !!prefs.practice; }
+  function storageKey() { return isPractice() ? PRACTICE_KEY : STORAGE_KEY; }
+
+  function load(key) {
+    const b = readBook(key || storageKey());
+    b.people = b.people || [];
+    return b;
+  }
+
+  function readBook(key) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(key);
       if (raw) {
         const b = JSON.parse(raw);
         if (b && Array.isArray(b.accounts) && Array.isArray(b.entries)) return b;
@@ -25,7 +35,7 @@
   }
 
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(book)); }
+    try { localStorage.setItem(storageKey(), JSON.stringify(book)); }
     catch (e) { toast('Could not save to browser storage — export a backup from Settings.'); }
   }
 
@@ -204,6 +214,7 @@
     transactions: renderTransactions,
     ledger: (p) => renderLedger(p),
     people: renderPeople,
+    practice: renderPractice,
     adjust: renderAdjust,
     statements: renderStatements,
     close: renderClose,
@@ -219,7 +230,12 @@
 
   function render() {
     const r = currentRoute();
+    renderModeBanner();
     $$('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === r.name));
+    const tabFor = { dashboard: 'dashboard', register: 'register', people: 'people', statements: 'reports', ledger: 'reports' };
+    $$('.tabbar [data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === (tabFor[r.name] || 'menu')));
+    const navLink = $('.nav a[data-route="' + r.name + '"]');
+    $('#bar-title').textContent = navLink ? navLink.textContent.replace(/^🧪\s*/, '') : 'Ledger';
     $('#app').classList.remove('nav-open');
     routes[r.name](r.params);
   }
@@ -230,6 +246,8 @@
 
   window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   $('#nav-toggle').addEventListener('click', () => $('#app').classList.toggle('nav-open'));
+  $('#tab-menu').addEventListener('click', (e) => { e.preventDefault(); $('#app').classList.toggle('nav-open'); });
+  $('#scrim').addEventListener('click', () => $('#app').classList.remove('nav-open'));
 
   // ---------------------------------------------------------------------------
   // Dashboard
@@ -305,7 +323,7 @@
       '<div class="page-head"><div><h1>Dashboard</h1><div class="sub">As of ' + fmtDate(t) +
       (L.closedThrough(book) ? ' · Books closed through ' + fmtDate(L.closedThrough(book)) : '') + '</div></div>' +
       '<div class="btn-row"><button id="add-tx">+ Quick transaction</button><button id="add-acct">+ Account / card</button><a class="btn primary" href="#/register">Encode bank transactions</a></div></div>' +
-      (hasAccounts ? '' : '<div class="notice warn">Start by adding your bank accounts, debit and credit cards, investments and other assets — or <a href="#/settings">load sample data</a> to explore.</div>') +
+      (hasAccounts ? '' : '<div class="notice warn">Start by adding your bank accounts, debit and credit cards, investments and other assets — or <a href="#/practice">try practice mode</a> with sample data first.</div>') +
       kpis +
       '<div class="grid grid-2"><div>' + chart + month + peopleCard + '</div><div>' + accountsCard + spend + '</div></div>';
 
@@ -600,6 +618,8 @@
     $$('tr[data-entry]').forEach((tr) => tr.onclick = () => editEntry(tr.dataset.entry, accountId));
   }
 
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
   function debounce(fn, ms) { let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; }
 
   function editEntry(id, contextAccountId) {
@@ -817,14 +837,14 @@
 
     const inputRow = (cls, v) =>
       '<tr class="' + cls + '"' + (v.id ? ' data-id="' + v.id + '"' : '') + '>' +
-      '<td><input type="date" class="r-date" value="' + esc(v.date) + '"></td>' +
-      '<td><input class="r-ref" value="' + esc(v.ref || '') + '" placeholder="Ref no."></td>' +
-      '<td><input class="r-payee" list="reg-payees" value="' + esc(v.payee || '') + '" placeholder="Payee / description"></td>' +
-      '<td><input class="r-acct" list="reg-accts" value="' + esc(v.account || '') + '" placeholder="Account (expense, income, asset, liability…)"></td>' +
-      '<td><input class="r-memo" value="' + esc(v.memo || '') + '" placeholder="Memo"></td>' +
-      '<td><input class="r-out num" inputmode="decimal" value="' + esc(v.out || '') + '" placeholder="' + cols.out + '"></td>' +
-      '<td><input class="r-in num" inputmode="decimal" value="' + esc(v.in || '') + '" placeholder="' + cols.in + '"></td>' +
-      '<td class="r-actions"><button class="primary r-save" title="Save (Enter)">Save</button>' +
+      '<td class="c-date" data-label="Date"><input type="date" class="r-date" value="' + esc(v.date) + '"></td>' +
+      '<td class="c-ref" data-label="Ref no."><input class="r-ref" value="' + esc(v.ref || '') + '" placeholder="Ref no."></td>' +
+      '<td class="c-payee" data-label="Payee"><input class="r-payee" list="reg-payees" value="' + esc(v.payee || '') + '" placeholder="Payee / description"></td>' +
+      '<td class="c-acct" data-label="Account"><input class="r-acct" list="reg-accts" value="' + esc(v.account || '') + '" placeholder="Account (expense, income, asset, liability…)"></td>' +
+      '<td class="c-memo" data-label="Memo"><input class="r-memo" value="' + esc(v.memo || '') + '" placeholder="Memo"></td>' +
+      '<td class="c-out" data-label="' + cols.out + '"><input class="r-out num" inputmode="decimal" value="' + esc(v.out || '') + '" placeholder="' + cols.out + '"></td>' +
+      '<td class="c-in" data-label="' + cols.in + '"><input class="r-in num" inputmode="decimal" value="' + esc(v.in || '') + '" placeholder="' + cols.in + '"></td>' +
+      '<td class="r-actions c-act"><button class="primary r-save" title="Save (Enter)">Save</button>' +
       '<button class="r-split" title="Split across several accounts">Split</button>' +
       (v.id ? '<button class="r-cancel" title="Cancel (Esc)">Cancel</button><button class="danger r-del" title="Delete">Delete</button>' : '') +
       '</td></tr>' +
@@ -847,7 +867,12 @@
         (e.kind === 'opening' || e.kind === 'adjusting' || e.kind === 'closing' ? ' ' + kindBadge(e.kind) : '') + '</td>' +
         '<td class="muted">' + esc(e.memo || '') + '</td>' +
         '<td class="num">' + (flow(r.delta) < 0 ? money(-flow(r.delta)) : '') + '</td><td class="num">' + (flow(r.delta) > 0 ? money(flow(r.delta)) : '') + '</td>' +
-        '<td class="num"><b>' + money(r.balance) + '</b></td></tr>';
+        '<td class="num"><b>' + money(r.balance) + '</b></td>' +
+        '<td class="c-mobile"><div class="m-top"><span class="m-payee">' + esc(e.description || '—') + '</span>' +
+        '<span class="m-amt ' + (flow(r.delta) < 0 ? 'm-out' : 'm-in') + '">' + (flow(r.delta) < 0 ? '−' : '+') + money(Math.abs(r.delta)) + '</span></div>' +
+        '<div class="m-bot"><span>' + (isSplit ? 'Split (' + (e.lines.length - 1) + ')' : esc(acctName(r.counterIds[0]))) + ' · ' + fmtDate(e.date) +
+        (e.ref ? ' · #' + esc(e.ref) : '') + (e.memo ? ' · ' + esc(e.memo) : '') + (locked ? ' 🔒' : '') + '</span>' +
+        '<span>Bal ' + money(r.balance) + '</span></div></td></tr>';
     }).join('');
 
     // Statement check: compare the register balance with the bank's figure.
@@ -1289,8 +1314,8 @@
       '<div class="page-head"><div><h1>People</h1><div class="sub">Money other people owe you (receivables) and money you owe them (payables), person by person.</div></div>' +
       '<div class="btn-row"><button onclick="window.print()">Print / PDF</button><button id="p-add">+ Add person</button><button class="primary" id="p-record">Record lend / borrow / repayment</button></div></div>' +
       '<div class="kpis">' +
-      '<div class="kpi"><div class="label">Owed to me (receivables)</div><div class="value pos">' + money(totOwed) + '</div><div class="hint">' + sum.filter((x) => x.owedToMe).length + ' people</div></div>' +
-      '<div class="kpi"><div class="label">I owe (payables)</div><div class="value neg">' + money(totIOwe) + '</div><div class="hint">' + sum.filter((x) => x.iOwe).length + ' people</div></div>' +
+      '<div class="kpi"><div class="label">Owed to me (receivables)</div><div class="value pos">' + money(totOwed) + '</div><div class="hint">' + plural(sum.filter((x) => x.owedToMe).length, 'person', 'people') + '</div></div>' +
+      '<div class="kpi"><div class="label">I owe (payables)</div><div class="value neg">' + money(totIOwe) + '</div><div class="hint">' + plural(sum.filter((x) => x.iOwe).length, 'person', 'people') + '</div></div>' +
       '<div class="kpi"><div class="label">Net position</div><div class="value">' + money(totOwed - totIOwe, { parens: true }) + '</div><div class="hint">' + (totOwed >= totIOwe ? 'Others owe you more' : 'You owe others more') + '</div></div>' +
       '</div>' +
       '<div class="card">' +
@@ -1570,7 +1595,7 @@
   }
 
   function stHead(title, sub) {
-    return '<div class="st-head"><div class="muted small">' + esc(book.ownerName ? book.ownerName + ' — personal financial statements' : 'Personal financial statements') + '</div><div class="title">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div></div>';
+    return '<div class="st-head">' + (isPractice() ? '<div class="practice-stamp">Practice data — not real figures</div>' : '') + '<div class="muted small">' + esc(book.ownerName ? book.ownerName + ' — personal financial statements' : 'Personal financial statements') + '</div><div class="title">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div></div>';
   }
   function line(label, cents, cls, opts) {
     opts = opts || {};
@@ -1715,6 +1740,67 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Practice mode
+  // ---------------------------------------------------------------------------
+
+  function renderModeBanner() {
+    const el = $('#mode-banner');
+    document.body.classList.toggle('practice', isPractice());
+    if (!isPractice()) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="practice-banner"><div><b>🧪 Practice mode</b> — everything here is temporary. Your real books are saved separately and are not affected.</div>' +
+      '<div class="btn-row"><a class="btn" href="#/practice">Start over</a><button class="primary" id="pm-exit">Exit practice &amp; discard</button></div></div>';
+    $('#pm-exit').onclick = exitPractice;
+  }
+
+  function enterPractice(start) {
+    const real = isPractice() ? readBook(STORAGE_KEY) : book;
+    if (!isPractice()) save(); // make sure the real book is on disk before switching
+    prefs.practice = true; savePrefs();
+    book = start === 'sample' ? sampleBook() : start === 'copy' ? JSON.parse(JSON.stringify(real)) : L.emptyBook();
+    book.people = book.people || [];
+    save();
+    location.hash = '#/dashboard';
+    rerender();
+    toast(start === 'sample' ? 'Practice mode with sample data' : start === 'copy' ? 'Practice mode with a copy of your books' : 'Practice mode — blank books');
+  }
+
+  function exitPractice() {
+    if (!confirm('Leave practice mode? The practice data will be deleted and your real books will come back.')) return;
+    try { localStorage.removeItem(PRACTICE_KEY); } catch (e) { /* ignore */ }
+    prefs.practice = false; savePrefs();
+    book = load();
+    location.hash = '#/dashboard';
+    rerender();
+    toast('Back to your real books');
+  }
+
+  function renderPractice() {
+    const real = isPractice() ? readBook(STORAGE_KEY) : book;
+    const option = (k, title, text, primary) => '<div class="card"><h2>' + title + '</h2><p class="small muted">' + text + '</p>' +
+      '<button class="' + (primary ? 'primary' : '') + '" data-start="' + k + '">' + (isPractice() ? 'Start over: ' : 'Start: ') + title.toLowerCase() + '</button></div>';
+    main.innerHTML =
+      '<div class="page-head"><div><h1>Practice mode</h1><div class="sub">A trial area for temporary data. Try entries, test reports or rehearse a presentation, then throw it away. Your real books stay exactly as they are.</div></div></div>' +
+      (isPractice()
+        ? '<div class="notice warn">You are in practice mode now. Starting over replaces the current practice data. <button class="link" id="pm-exit2">Exit practice &amp; discard</button></div>'
+        : '<div class="notice ok">Your real books: ' + real.accounts.filter((a) => a.type === 'asset' || a.type === 'liability').length + ' accounts, ' + real.entries.length + ' entries. Practice mode will not change them.</div>') +
+      '<div class="grid grid-3">' +
+      option('blank', 'Blank books', 'Start from zero with just the default categories. Good for testing how to encode a few transactions.', true) +
+      option('sample', 'Sample data', 'Three months of demo accounts, cards, people and transactions so every report has something to show.') +
+      option('copy', 'Copy of my books', 'A copy of your real data. Experiment freely — e.g. try a big purchase or a closing — without touching the original.') +
+      '</div>' +
+      '<div class="card"><h2>How it works</h2><ul class="small muted" style="margin:0;padding-left:18px">' +
+      '<li>While practice mode is on, a yellow banner is shown on every page and printed statements are stamped “Practice data”.</li>' +
+      '<li>Everything works normally — bank register, people, statements, ledger, closing.</li>' +
+      '<li><b>Exit practice &amp; discard</b> deletes the practice data and brings your real books back. To keep something you made in practice, use Settings → Export backup before leaving.</li>' +
+      '</ul></div>';
+    $$('[data-start]').forEach((b) => b.onclick = () => {
+      if (isPractice() && !confirm('Replace the current practice data?')) return;
+      enterPractice(b.dataset.start);
+    });
+    const ex = $('#pm-exit2'); if (ex) ex.onclick = exitPractice;
+  }
+
+  // ---------------------------------------------------------------------------
   // Settings
   // ---------------------------------------------------------------------------
 
@@ -1732,8 +1818,8 @@
       '<label class="btn">Restore backup<input type="file" id="s-import" accept=".json,application/json" class="hidden"></label>' +
       '<button id="s-csv">Export all transactions (CSV)</button></div>' +
       '<p class="small muted" style="margin-top:10px">' + book.accounts.length + ' accounts · ' + book.entries.length + ' journal entries</p></div>' +
-      '<div class="card"><h2>Sample data</h2><p class="small muted">Loads a demo set of accounts and three months of transactions so you can explore every report. Replaces your current data.</p><button id="s-sample">Load sample data</button></div>' +
-      '<div class="card"><h2>Reset</h2><p class="small muted">Erase all accounts and transactions in this browser.</p><button class="danger" id="s-reset">Erase everything</button></div>' +
+      '<div class="card"><h2>Practice mode / sample data</h2><p class="small muted">Try things on temporary data — blank, sample data, or a copy of your books — without touching your real records.</p><div class="btn-row"><a class="btn primary" href="#/practice">Open practice mode</a><button id="s-sample">Practice with sample data</button></div></div>' +
+      '<div class="card"><h2>Reset</h2><p class="small muted">' + (isPractice() ? 'Erase the practice data (your real books are not affected).' : 'Erase all your real accounts and transactions in this browser.') + '</p><button class="danger" id="s-reset">' + (isPractice() ? 'Erase practice data' : 'Erase everything') + '</button></div>' +
       '</div>';
     $('#s-theme').value = prefs.theme || '';
     $('#s-owner').onchange = (e) => { book.ownerName = e.target.value.trim() || undefined; commit(); toast('Saved'); };
@@ -1743,7 +1829,7 @@
       try { new Intl.NumberFormat(undefined, { style: 'currency', currency: c }); } catch (err) { return alert('Unknown currency code: ' + c); }
       book.currency = c; commit(); toast('Currency set to ' + c);
     };
-    $('#s-export').onclick = () => download('ledger-backup-' + today() + '.json', JSON.stringify(book, null, 2), 'application/json');
+    $('#s-export').onclick = () => download((isPractice() ? 'ledger-PRACTICE-backup-' : 'ledger-backup-') + today() + '.json', JSON.stringify(book, null, 2), 'application/json');
     $('#s-import').onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;
       try {
@@ -1763,8 +1849,8 @@
       download('ledger-transactions-' + today() + '.csv', rows.map((r) => r.map((c) => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv');
     };
     $('#s-sample').onclick = () => {
-      if (book.entries.length && !confirm('Replace your current data with sample data?')) return;
-      book = sampleBook(); commit(); location.hash = '#/dashboard'; toast('Sample data loaded');
+      if (isPractice() && !confirm('Replace the current practice data with sample data?')) return;
+      enterPractice('sample');
     };
     $('#s-reset').onclick = () => {
       if (!confirm('Erase all data? This cannot be undone (export a backup first).')) return;
