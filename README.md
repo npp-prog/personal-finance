@@ -124,6 +124,16 @@ The **People** page tracks money that specific people owe you and money you owe 
 * **Restore from backup** shows what's inside the file (accounts, entries, the date it was made) before it replaces anything. Use it to move to a new phone, tablet or computer.
 * **Export transactions (CSV)** saves every journal line as a spreadsheet.
 
+## Security code
+
+Bulk changes need a **security code**: **Erase everything**, **Load sample data**, **Restore from backup** and **Import CSV**.
+
+* **Setup:** the first time you do one of these, Pundo asks you to create a code (at least 4 characters, typed twice). After that it asks for the code every time. The prompt says exactly what is about to happen, for example how many entries will be replaced.
+* **Wrong code:** after 5 wrong tries, you must wait 30 seconds.
+* **Forgot your code?** Type `RESET` on purpose, then create a new one.
+* **Change it:** go to **Settings → Security code**.
+* **Storage:** the code is kept only as a salted SHA-256 hash on the device. It's never saved in plain text and never included in backup files.
+
 ## Account colours
 
 Give each bank account or card a colour: pick one of ten presets or any custom colour. Edit the account from **Accounts & cards** or with the **Edit** link in the Bank register. The colour shows as a stripe on the register tiles and a dot in the account lists.

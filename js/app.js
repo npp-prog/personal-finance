@@ -130,11 +130,184 @@
       b.people = b.people || [];
       const when = b.backupCreatedAt ? new Date(b.backupCreatedAt).toLocaleString() : 'unknown date';
       const realAccounts = b.accounts.filter((a) => (a.type === 'asset' || a.type === 'liability') && !a.personId).length;
-      if (!confirm('Restore this backup?\n\nMade: ' + when + '\n' + realAccounts + ' accounts & cards, ' + (b.people || []).length + ' people, ' + b.entries.length + ' entries\n\nThis REPLACES everything currently in the app.')) return false;
-      delete b.backupCreatedAt; delete b.app;
-      book = b; commit(); toast('Backup restored');
-      return true;
+      const detail = 'Backup made ' + esc(when) + ': ' + realAccounts + ' accounts &amp; cards, ' + (b.people || []).length + ' people, ' + b.entries.length + ' entries.<br>This <b>replaces everything</b> currently in the app (' + book.entries.length + ' entries).';
+      return requireCode('Restore from backup', detail).then((ok) => {
+        if (!ok) return false;
+        delete b.backupCreatedAt; delete b.app;
+        book = b; commit(); toast('Backup restored');
+        return true;
+      });
     });
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // Security code: required before bulk changes (erase, restore, CSV import, sample data)
+  // so a stray tap can't wipe or overwrite the books. Stored per device as a salted SHA-256
+  // hash; never kept in the book, so it is not part of backups.
+  // ---------------------------------------------------------------------------
+
+  const SECURITY_KEY = 'pf-ledger-security-v1';
+  const MAX_TRIES = 5, LOCK_SECONDS = 30;
+
+  function sha256(text) {
+    const K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+    const bytes = Array.from(new TextEncoder().encode(text));
+    const bitLen = bytes.length * 8;
+    bytes.push(0x80);
+    while (bytes.length % 64 !== 56) bytes.push(0);
+    for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bitLen >>> (i * 8)) & 0xff);
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    const W = new Array(64);
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let off = 0; off < bytes.length; off += 64) {
+      for (let i = 0; i < 16; i++) W[i] = (bytes[off + 4 * i] << 24) | (bytes[off + 4 * i + 1] << 16) | (bytes[off + 4 * i + 2] << 8) | bytes[off + 4 * i + 3];
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+        const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+        W[i] = (W[i - 16] + s0 + W[i - 7] + s1) | 0;
+      }
+      let [a, b, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) | 0;
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+      H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+    }
+    return H.map((x) => (x >>> 0).toString(16).padStart(8, '0')).join('');
+  }
+
+  function readSecurity() { try { return JSON.parse(localStorage.getItem(SECURITY_KEY)) || {}; } catch (e) { return {}; } }
+  function writeSecurity(sec) { try { localStorage.setItem(SECURITY_KEY, JSON.stringify(sec)); } catch (e) { /* ignore */ } }
+  function hasSecurityCode() { return !!readSecurity().hash; }
+
+  function setSecurityCode(code) {
+    const salt = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('');
+    writeSecurity({ salt, hash: sha256(salt + ':' + code), failed: 0, lockUntil: 0, setAt: new Date().toISOString() });
+  }
+
+  /** Checks a code, counting failures; returns { ok, message }. */
+  function checkSecurityCode(code) {
+    const sec = readSecurity();
+    const now = Date.now();
+    if (sec.lockUntil && now < sec.lockUntil) {
+      return { ok: false, message: 'Too many wrong tries. Wait ' + Math.ceil((sec.lockUntil - now) / 1000) + ' seconds and try again.' };
+    }
+    if (sha256(sec.salt + ':' + code) === sec.hash) {
+      sec.failed = 0; sec.lockUntil = 0; writeSecurity(sec);
+      return { ok: true };
+    }
+    sec.failed = (sec.failed || 0) + 1;
+    let message = 'Wrong code.' + (sec.failed < MAX_TRIES ? ' ' + (MAX_TRIES - sec.failed) + ' tries left.' : '');
+    if (sec.failed >= MAX_TRIES) {
+      sec.failed = 0; sec.lockUntil = now + LOCK_SECONDS * 1000;
+      message = 'Wrong code. Too many tries — wait ' + LOCK_SECONDS + ' seconds.';
+    }
+    writeSecurity(sec);
+    return { ok: false, message };
+  }
+
+  function codeError(msg) {
+    if (msg.length < 4) return 'Use at least 4 characters (numbers or letters).';
+    return '';
+  }
+
+  /**
+   * Ask for the security code before a bulk change. Resolves true when the user proves
+   * it (or creates a code for the first time), false if they cancel.
+   */
+  function requireCode(action, detail) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => { if (done) return; done = true; dialog.removeEventListener('close', onClose); if (ok) closeDialog(); resolve(ok); };
+      const onClose = () => finish(false);
+      const summary = '<div class="notice warn" style="margin-bottom:12px"><b>' + esc(action) + '</b>' + (detail ? '<div class="small" style="margin-top:4px">' + detail + '</div>' : '') + '</div>';
+
+      const askCreate = (intro) => {
+        showDialog('Create a security code', summary +
+          '<p class="small muted">' + (intro || 'To protect your books from accidental bulk changes, Pundo asks for a security code before erasing, restoring a backup, importing a CSV or loading sample data. Create one now — you will need it next time.') + '</p>' +
+          '<div class="form-grid"><label class="field">New code<input id="sc-new" type="password" autocomplete="new-password" inputmode="text" maxlength="64"></label>' +
+          '<label class="field">Type it again<input id="sc-confirm" type="password" autocomplete="new-password" maxlength="64"></label></div>' +
+          '<p class="small muted" style="margin-top:8px">At least 4 characters. It stays on this device only and is not saved in backups.</p>',
+          ['', '<button data-act="sc-cancel">Cancel</button><button class="primary" data-act="sc-save">Save code &amp; continue</button>']);
+        $('#sc-new', dialog).focus();
+        dialogAction('sc-cancel', () => { finish(false); closeDialog(); });
+        dialogAction('x', () => { finish(false); closeDialog(); });
+        dialogAction('sc-save', () => {
+          const a = $('#sc-new', dialog).value, b = $('#sc-confirm', dialog).value;
+          const err = codeError(a);
+          if (err) return dialogError(err);
+          if (a !== b) return dialogError('The two codes do not match.');
+          setSecurityCode(a);
+          toast('Security code saved');
+          finish(true);
+        });
+      };
+
+      const askCode = () => {
+        showDialog('Enter your security code', summary +
+          '<label class="field">Security code<input id="sc-code" type="password" autocomplete="current-password" maxlength="64"></label>' +
+          '<p class="small" style="margin-top:10px"><button class="link" data-act="sc-forgot">Forgot your code?</button></p>',
+          ['', '<button data-act="sc-cancel">Cancel</button><button class="primary" data-act="sc-ok">Confirm</button>']);
+        $('#sc-code', dialog).focus();
+        dialogAction('sc-cancel', () => { finish(false); closeDialog(); });
+        dialogAction('x', () => { finish(false); closeDialog(); });
+        dialogAction('sc-ok', () => {
+          const r = checkSecurityCode($('#sc-code', dialog).value);
+          if (!r.ok) { $('#sc-code', dialog).value = ''; return dialogError(r.message); }
+          finish(true);
+        });
+        dialogAction('sc-forgot', () => {
+          showDialog('Reset your security code', summary +
+            '<p class="small muted">If you forgot your code you can set a new one. To make sure this is on purpose, type <b>RESET</b> below.</p>' +
+            '<label class="field">Type RESET<input id="sc-reset" autocomplete="off" autocapitalize="characters"></label>',
+            ['', '<button data-act="sc-cancel">Cancel</button><button class="primary" data-act="sc-reset-ok">Continue</button>']);
+          $('#sc-reset', dialog).focus();
+          dialogAction('sc-cancel', () => { finish(false); closeDialog(); });
+          dialogAction('x', () => { finish(false); closeDialog(); });
+          dialogAction('sc-reset-ok', () => {
+            if ($('#sc-reset', dialog).value.trim() !== 'RESET') return dialogError('Type RESET in capital letters to continue.');
+            askCreate('Create your new security code.');
+          });
+        });
+      };
+
+      if (hasSecurityCode()) askCode(); else askCreate();
+      dialog.addEventListener('close', onClose);
+    });
+  }
+
+  function openChangeCodeDialog() {
+    const hadCode = hasSecurityCode();
+    const action = hadCode ? 'Change your security code' : 'Create a security code';
+    const go = () => requireCode(action, '').then((ok) => {
+      if (!ok) return;
+      if (!hadCode) { rerender(); return; } // just created it
+      // Current code verified: now ask for the new one.
+      showDialog('New security code',
+        '<div class="form-grid"><label class="field">New code<input id="sc-new" type="password" autocomplete="new-password" maxlength="64"></label>' +
+        '<label class="field">Type it again<input id="sc-confirm" type="password" autocomplete="new-password" maxlength="64"></label></div>',
+        ['', '<button data-act="cancel">Cancel</button><button class="primary" data-act="save">Save new code</button>']);
+      $('#sc-new', dialog).focus();
+      dialogAction('cancel', closeDialog);
+      dialogAction('save', () => {
+        const a = $('#sc-new', dialog).value, b = $('#sc-confirm', dialog).value;
+        const err = codeError(a);
+        if (err) return dialogError(err);
+        if (a !== b) return dialogError('The two codes do not match.');
+        setSecurityCode(a); closeDialog(); toast('Security code changed'); rerender();
+      });
+    });
+    go();
   }
 
   function loadPrefs() {
@@ -1380,14 +1553,17 @@
       layout();
       dialogAction('back', step1);
       dialogAction('cancel', closeDialog);
-      dialogAction('import', () => {
+      dialogAction('import', async () => {
         const parsed = parseRows();
+        if (!parsed.ok.length) return dialogError('Nothing to import — check the column mapping.');
+        const ok = await requireCode('Import ' + parsed.ok.length + ' transactions', 'Into <b>' + esc(acctName(accountId)) + '</b> from your CSV file.');
+        if (!ok) return;
         let n = 0; const errs = [];
         for (const x of parsed.ok) {
           try { L.postEntry(book, L.simpleEntry(book, Object.assign({ accountId }, x))); n++; }
           catch (err) { errs.push(x.date + ': ' + err.message); }
         }
-        save(); closeDialog(); rerender();
+        save(); rerender();
         toast('Imported ' + n + ' transactions' + (errs.length ? ', ' + errs.length + ' rejected (closed period?)' : ''));
       });
     };
@@ -1930,6 +2106,9 @@
         : '<h3 style="margin-top:14px">Automatic backup</h3><p class="small muted">In the Pundo Android app your data is backed up automatically to your Google account. In a browser, use <b>Back up now</b> and keep the file in Google Drive.</p>') + '</div>' +
       '<p class="small muted" style="margin-top:10px">Last backup: <b>' + (lastBackupAt() ? new Date(lastBackupAt()).toLocaleString() : 'never') + '</b> · ' + book.accounts.filter((a) => (a.type === 'asset' || a.type === 'liability') && !a.personId).length + ' accounts &amp; cards · ' + book.entries.length + ' entries</p></div>' +
       '<div class="card"><h2>Sample data</h2><p class="small muted">Loads demo accounts, cards, people and three months of transactions so you can explore every report. <b>Replaces your current data</b> — back up first.</p><button id="s-sample">Load sample data</button></div>' +
+      '<div class="card"><h2>Security code</h2><p class="small muted">Required before erasing everything, restoring a backup, importing a CSV or loading sample data, so bulk changes can\'t happen by accident. ' +
+      (hasSecurityCode() ? 'Status: <span class="badge cash">Set</span> (since ' + new Date(readSecurity().setAt).toLocaleDateString() + ')' : 'Status: <span class="badge">Not set yet</span> — you will be asked to create one the first time.') + '</p>' +
+      '<button id="s-code">' + (hasSecurityCode() ? 'Change security code' : 'Create security code') + '</button></div>' +
       '<div class="card"><h2>Reset</h2><p class="small muted">Erase all accounts and transactions on this device.</p><button class="danger" id="s-reset">Erase everything</button></div>' +
       '</div>';
     $('#s-theme').value = prefs.theme || '';
@@ -1955,13 +2134,18 @@
       download('pundo-transactions-' + today() + '.csv', rows.map((r) => r.map((c) => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv');
     };
     $('#s-sample').onclick = () => {
-      if (book.entries.length && !confirm('Replace ALL your current data with sample data? This cannot be undone — export a backup first.')) return;
-      book = sampleBook(); commit(); location.hash = '#/dashboard'; toast('Sample data loaded');
+      requireCode('Load sample data', 'Replaces <b>all</b> your current data (' + book.entries.length + ' entries) with demo data. Back up first if you want to keep it.').then((ok) => {
+        if (!ok) return;
+        book = sampleBook(); commit(); location.hash = '#/dashboard'; toast('Sample data loaded');
+      });
     };
     $('#s-reset').onclick = () => {
-      if (!confirm('Erase all data? This cannot be undone (export a backup first).')) return;
-      book = L.emptyBook(); commit(); toast('All data erased');
+      requireCode('Erase everything', 'Deletes <b>all</b> accounts, people and ' + book.entries.length + ' entries on this device. This cannot be undone — back up first.').then((ok) => {
+        if (!ok) return;
+        book = L.emptyBook(); commit(); toast('All data erased');
+      });
     };
+    $('#s-code').onclick = openChangeCodeDialog;
   }
 
   function download(name, text, type) { return saveFile(name, text, type); }
