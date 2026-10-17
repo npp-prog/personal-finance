@@ -12,7 +12,28 @@
           "package_name": "org.mgocandoniaccounting.pundo"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "942596972707-4c26f4ebsccmtotbopigoge59oieimbg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "org.mgocandoniaccounting.pundo",
+            "certificate_hash": "0a4e1800eb9121990f9c3e864cc780e1d8c67b9a"
+          }
+        },
+        {
+          "client_id": "942596972707-tfnb31nhamo5kne55ef7vu8fp626lqtd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "org.mgocandoniaccounting.pundo",
+            "certificate_hash": "7ef33532dacb4c6f69210c7aebd5b192122083ae"
+          }
+        },
+        {
+          "client_id": "942596972707-a8ejhiii08sncbedknirmc087dqs6pp6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCP7F4BIL9y6-wTfhlY2iXfmlNeiY8yZO4"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "942596972707-a8ejhiii08sncbedknirmc087dqs6pp6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
