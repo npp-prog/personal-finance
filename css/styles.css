@@ -230,6 +230,7 @@ tr.je-end td { padding-top: 2px; padding-bottom: 10px; }
 .notice.ok { background: var(--ok-bg); color: var(--ok-ink); }
 .notice.warn { background: var(--warn-bg); color: var(--warn-ink); }
 .notice.err { background: var(--err-bg); color: var(--err-ink); }
+.notice.sub-box { background: var(--accent-soft); color: var(--text); border: 1px solid var(--border); font-size: 14px; padding: 14px; }
 .google-btn { width: 100%; max-width: 360px; justify-content: center; gap: 10px; background: #fff; color: #1f1f1f; border: 1px solid #747775; border-radius: 999px; font-weight: 600; padding: 10px 16px; font-family: Roboto, var(--font); }
 .google-btn:hover { background: #f7f8f8; }
 .or-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin: 14px 0 10px; max-width: 360px; }

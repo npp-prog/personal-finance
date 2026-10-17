@@ -2,14 +2,34 @@ rules_version = '2';
 
 // Pundo: every user can read and write only their own folder, users/{their uid}/...
 // Nobody can list other users or read anyone else's books.
+//
+// Uploading to the cloud (create/update) needs an active sync subscription:
+// entitlements/{uid}.activeUntil in the future. Only the checkSubscription Cloud Function writes
+// that document, after verifying the purchase with Google Play. Reading and deleting your own data
+// never needs a subscription, so an expired subscriber can still download or delete everything.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
     }
 
-    // Everything else is closed.
+    function hasSync(uid) {
+      let ent = /databases/$(database)/documents/entitlements/$(uid);
+      return exists(ent) && get(ent).data.activeUntil > request.time;
+    }
+
+    match /users/{uid}/{document=**} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && hasSync(uid);
+    }
+
+    // Written only by Cloud Functions (the Admin SDK bypasses these rules).
+    match /entitlements/{uid} {
+      allow read: if isOwner(uid);
+    }
+
+    // Everything else is closed (including purchases/, used by Cloud Functions).
     match /{document=**} {
       allow read, write: if false;
     }

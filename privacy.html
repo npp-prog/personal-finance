@@ -22,10 +22,12 @@
   <p>If you use Pundo without signing in, everything you enter stays on your device and nothing is sent anywhere. If you choose to sign in to <b>sync across devices</b>, your books are stored in your own private space in the cloud so they can appear on your other devices. We never sell or share your data, show ads or use it for anything else.</p>
 
   <h2>What the app stores</h2>
-  <p>Accounts, transactions, people and settings you enter are saved only in the app's local storage on your device. There are no user accounts, no servers, no analytics, no advertising and no third-party tracking.</p>
+  <p>Accounts, transactions, people and settings you enter are saved in the app's local storage on your device. Unless you sign in to sync, nothing leaves your device. There is no analytics, no advertising and no third-party tracking.</p>
 
   <h2>Sync and your account (optional)</h2>
   <p>When you create an account, we store your email address and, if you sign in with Google, your Google account's basic profile (name, email, profile picture link); if you use a password it is stored only as a secure hash (all handled by Google Firebase Authentication), and your accounts, people, transactions and report settings (in Google Cloud Firestore, Singapore region). Data is encrypted in transit and at rest by Google. Access rules allow only you, signed in with your account, to read or change your data. Your security code is never uploaded.</p>
+  <h2>Sync subscription (optional)</h2>
+  <p>Sync is a paid monthly subscription bought through Google Play; the rest of Pundo is free. Payment is handled entirely by Google Play: we never see or store your card or payment details. To confirm your subscription, our server receives the Google Play purchase token and stores the subscription status (active or not, renewal date, product) with your account, plus a one-way fingerprint of the purchase token so a purchase can only be linked to one account. You can cancel anytime in Google Play → Payments &amp; subscriptions → Subscriptions; deleting your Pundo account does not cancel a Google Play subscription.</p>
   <p>You can delete your account and all synced data at any time in <b>Settings → Sync across devices → Delete account</b>, or see <a href="delete-account.html">how to delete your account</a>.</p>
 
   <h2>Automatic backup (Android)</h2>
@@ -35,7 +37,7 @@
   <p>When you choose Export backup, Export CSV or Print / PDF, the app creates a file and hands it to your device's share sheet. Where that file goes (for example a folder, email or cloud drive) is your choice and is governed by that app's own privacy policy.</p>
 
   <h2>Permissions</h2>
-  <p>The app requests no special permissions. Choosing a file to import or restore uses the system file picker, which only gives the app the file you select.</p>
+  <p>The app requests no special permissions other than Google Play billing, used only when you choose to subscribe to sync. Choosing a file to import or restore uses the system file picker, which only gives the app the file you select.</p>
 
   <h2>Deleting your data</h2>
   <p>Use Settings → Erase everything inside the app, clear the app's storage in Android settings, or uninstall the app. Because no data is kept anywhere else, this removes it completely.</p>

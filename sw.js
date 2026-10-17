@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump VERSION whenever app files change. */
-const VERSION = 'pundo-v1';
+const VERSION = 'pundo-v2';
 const SHELL = [
   './', './index.html', './css/styles.css', './js/ledger.js', './js/app.js',
   './manifest.webmanifest', './assets/favicon.png', './assets/logo-mark.png', './icons/icon-192.png', './icons/icon-512.png',

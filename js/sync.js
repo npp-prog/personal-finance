@@ -12,6 +12,11 @@
  *     cloud's (nothing is thrown away); after that the newest meta wins.
  *   - Firestore queues writes while offline and sends them when the connection returns.
  *
+ * Sync is a paid add-on (window.PUNDO_SUBSCRIPTION): uploading needs entitlements/{uid} with
+ * activeUntil in the future. Only the checkSubscription Cloud Function writes it, after verifying the
+ * Google Play purchase (or for accounts on the free list). Without it the device keeps working
+ * offline and sync pauses; firestore.rules enforce the same thing on the server.
+ *
  * The app talks to this module through window.PundoSync; the backend is a small adapter so the
  * engine can be tested without Firebase (window.__PUNDO_TEST_CLOUD__).
  */
@@ -19,7 +24,7 @@
   'use strict';
 
   const STATE_KEY = 'pf-ledger-sync-v1';
-  const VENDOR = ['vendor/firebase/firebase-app-compat.js', 'vendor/firebase/firebase-auth-compat.js', 'vendor/firebase/firebase-firestore-compat.js'];
+  const VENDOR = ['vendor/firebase/firebase-app-compat.js', 'vendor/firebase/firebase-auth-compat.js', 'vendor/firebase/firebase-firestore-compat.js', 'vendor/firebase/firebase-functions-compat.js'];
 
   let api = null;          // hooks provided by the app
   let adapter = null;      // backend (Firebase or test double)
@@ -32,11 +37,26 @@
   let metaChecked = false; // first remote meta snapshot handled (needed before pushing meta on first link)
   const echo = new Map();  // id -> updatedAt applied from the cloud (don't push it straight back)
   const status = { state: 'off', lastSyncAt: null, error: '' };
+  let entUnsub = null;     // entitlement listener
+  let entTimer = null;     // re-check when access runs out
+  let restoreTried = false;
+  let sub = { known: false, active: false, activeUntil: 0, source: '', autoRenewing: false };
   let state = loadState();
 
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)) || {}; } catch (e) { return {}; } }
   function saveState() { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ } }
   function config() { const c = window.PUNDO_FIREBASE_CONFIG; return c && c.apiKey && c.projectId ? c : null; }
+  function subConfig() { return Object.assign({ required: false, productId: 'pundo_sync', price: '', functionsRegion: 'us-central1' }, window.PUNDO_SUBSCRIPTION || {}); }
+  // The paywall applies when it is switched on and the backend knows about entitlements.
+  function paywall() { return !!(subConfig().required && adapter && adapter.watchEntitlement); }
+  function billing() {
+    const C = window.Capacitor;
+    return (C && C.isNativePlatform && C.isNativePlatform() && C.Plugins && C.Plugins.PundoBilling) || window.__PUNDO_TEST_BILLING__ || null;
+  }
+  async function accountTag(uid) {
+    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(uid));
+    return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
   function setStatus(s, extra) { Object.assign(status, { state: s }, extra || {}); if (api) api.onStatus(); }
 
   function loadScript(src) {
@@ -148,6 +168,16 @@
         await u.reauthenticateWithCredential(fb.auth.EmailAuthProvider.credential(u.email, password));
       },
       deleteUser: () => auth.currentUser.delete(),
+      watchEntitlement(uid, cb) {
+        return db.doc('entitlements/' + uid).onSnapshot((s) => {
+          const d = s.exists ? s.data() : null;
+          cb(d && d.activeUntil ? { activeUntil: d.activeUntil.toMillis(), source: d.source || 'play', autoRenewing: !!d.autoRenewing } : null);
+        }, () => cb(null));
+      },
+      async checkSubscription(purchases) {
+        const call = fb.app().functions(subConfig().functionsRegion).httpsCallable('checkSubscription');
+        return (await call({ purchases })).data;
+      },
     };
   }
 
@@ -171,9 +201,54 @@
 
   function onAuthChange(u) {
     user = u;
-    if (!u) { stop(); setStatus('signedout'); return; }
+    if (!u) { stop(); stopEntitlement(); setStatus('signedout'); return; }
     if (state.uid !== u.uid) { state = { uid: u.uid, lastPulled: 0, lastPushed: '', first: true }; saveState(); }
-    start();
+    if (!paywall()) { start(); return; }
+    stopEntitlement();
+    sub = { known: false, active: false, activeUntil: 0, source: '', autoRenewing: false };
+    restoreTried = false;
+    setStatus('checking');
+    entUnsub = adapter.watchEntitlement(u.uid, onEntitlement);
+  }
+
+  function stopEntitlement() {
+    if (entUnsub) { try { entUnsub(); } catch (e) { /* ignore */ } }
+    entUnsub = null;
+    clearTimeout(entTimer);
+  }
+
+  function onEntitlement(e) {
+    if (!user) return;
+    const until = (e && e.activeUntil) || 0;
+    sub = { known: true, active: until > Date.now(), activeUntil: until, source: (e && e.source) || '', autoRenewing: !!(e && e.autoRenewing) };
+    clearTimeout(entTimer);
+    if (sub.active) {
+      restoreTried = false; // if it lapses later, ask the server again once (Play may have renewed it)
+      // Re-evaluate when it runs out (timers can't wait more than ~24 days).
+      entTimer = setTimeout(() => onEntitlement(e), Math.min(until - Date.now() + 1000, 2 ** 31 - 1));
+      if (!unsubscribe) start(); else if (api) api.onStatus();
+      return;
+    }
+    stop();
+    setStatus('needsub', { error: '' });
+    // Quietly ask the server once: picks up renewals, purchases made on another device and free access.
+    if (!restoreTried) { restoreTried = true; refreshSubscription().catch(() => { /* stays paused */ }); }
+  }
+
+  /** Sends the Play purchases on this device (if any) to the server and returns the result. */
+  async function refreshSubscription() {
+    if (!adapter || !user || !adapter.checkSubscription) return { active: false };
+    let purchases = [];
+    const b = billing();
+    if (b) {
+      try {
+        const r = await b.getPurchases();
+        purchases = ((r && r.purchases) || []).filter((p) => p.purchaseToken).map((p) => ({ purchaseToken: p.purchaseToken, productId: p.productId }));
+      } catch (e) { /* Play unavailable: still ask the server about free access */ }
+    }
+    const res = await adapter.checkSubscription(purchases);
+    if (res && res.active) onEntitlement({ activeUntil: res.activeUntil, source: res.source, autoRenewing: res.autoRenewing });
+    return res || { active: false };
   }
 
   function start() {
@@ -231,7 +306,12 @@
       }
       setStatus('synced', { lastSyncAt: new Date().toISOString(), error: '' });
     } catch (err) {
-      setStatus(navigator.onLine === false ? 'offline' : 'error', { error: friendlyError(err) });
+      if (paywall() && err && err.code === 'permission-denied') {
+        // Most likely the subscription just ended: the entitlement listener will confirm.
+        setStatus('needsub', { error: '' });
+      } else {
+        setStatus(navigator.onLine === false ? 'offline' : 'error', { error: friendlyError(err) });
+      }
     } finally {
       pushing = false;
       if (pushAgain) { pushAgain = false; schedulePush(500); }
@@ -318,6 +398,17 @@
       'auth/configuration-not-found': 'Sign-in is not switched on yet. In the Firebase console open Authentication → Get started → Email/Password → Enable.',
       'auth/operation-not-allowed': 'Email/password sign-in is not enabled. In the Firebase console open Authentication → Sign-in method → Email/Password → Enable.',
       'permission-denied': 'The cloud refused access. Check the Firestore security rules, or sign out and sign in again.',
+      'functions/permission-denied': 'This purchase belongs to a different Pundo account. Sign in with the account you subscribed with.',
+      'functions/invalid-argument': 'Google Play does not recognise this purchase.',
+      'functions/failed-precondition': 'Subscriptions are not fully set up on the server yet. Please try again later.',
+      'functions/unavailable': 'Cannot reach the server right now. Please try again later.',
+      'functions/not-found': 'Subscriptions are not set up on the server yet (Cloud Function not deployed).',
+      'functions/internal': 'The server could not check your subscription. Please try again later.',
+      cancelled: '',
+      busy: 'A purchase is already in progress.',
+      owned: 'You already have this subscription. Tap “Restore purchase”.',
+      'billing-unavailable': 'Google Play billing is not available on this device. Make sure you are signed in to the Play Store.',
+      'item-unavailable': 'The subscription is not available in Google Play yet.',
       'failed-precondition': 'The cloud database is not set up yet. In the Firebase console open Firestore Database → Create database.',
       unavailable: 'Cannot reach the cloud right now — changes are saved and will sync later.',
     };
@@ -358,7 +449,7 @@
     usesPassword: () => !!(user && (user.providers || ['password']).includes('password')),
     async resetPassword(email) { const a = await ensureAdapter(); await a.resetPassword(email); },
     async signOut() {
-      stop();
+      stop(); stopEntitlement();
       if (adapter) await adapter.signOut();
       state = {}; saveState(); user = null; echo.clear();
       setStatus('signedout');
@@ -367,12 +458,41 @@
     async deleteAccount(password) {
       if (!adapter || !user) throw new Error('Not signed in.');
       await adapter.reauthenticate(password);
-      stop();
+      stop(); stopEntitlement();
       await adapter.deleteAllData(user.uid);
       await adapter.deleteUser();
       state = {}; saveState(); user = null; echo.clear();
       setStatus('signedout');
     },
     friendlyError,
+
+    // --- Subscription -------------------------------------------------------------------------
+    /** True when sync needs a subscription (paywall on and backend supports it). */
+    requiresSubscription: () => paywall(),
+    subscription: () => Object.assign({}, sub, { active: !paywall() || (sub.active && sub.activeUntil > Date.now()) }),
+    /** True in the Android app, where Google Play purchases are possible. */
+    canPurchase: () => !!billing(),
+    priceText: () => subConfig().price,
+    /** Price from Google Play (formatted in the user's currency), or null. */
+    async getOffer() {
+      const b = billing(); if (!b) return null;
+      try { return await b.getProduct({ productId: subConfig().productId }); } catch (e) { return null; }
+    },
+    async subscribe() {
+      const b = billing();
+      if (!b) throw new Error('Subscribe in the Pundo Android app from Google Play.');
+      if (!user || !adapter) throw new Error('Sign in first.');
+      const p = await b.purchase({ productId: subConfig().productId, accountId: await accountTag(user.uid) });
+      if (p && p.state === 'pending') return { pending: true };
+      const res = await adapter.checkSubscription([{ purchaseToken: p.purchaseToken, productId: p.productId }]);
+      if (res && res.active) onEntitlement({ activeUntil: res.activeUntil, source: res.source, autoRenewing: res.autoRenewing });
+      return res;
+    },
+    restorePurchases: () => refreshSubscription(),
+    async manageSubscription() {
+      const b = billing();
+      if (b && b.manage) return b.manage({ productId: subConfig().productId });
+      window.open('https://play.google.com/store/account/subscriptions', '_blank', 'noopener');
+    },
   };
 })();

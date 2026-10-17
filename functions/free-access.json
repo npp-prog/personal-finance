@@ -1,0 +1,9 @@
+{
+  "_comment": "Accounts that get cloud sync without paying. uids: Firebase Authentication user IDs. verifiedEmails: only counted when the email is verified (Google sign-in emails always are).",
+  "uids": [
+    "jEyMxtXVpAg9EtRgaIxQjBC440m2"
+  ],
+  "verifiedEmails": [
+    "prioloneil@gmail.com"
+  ]
+}

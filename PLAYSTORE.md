@@ -140,6 +140,8 @@ Answer the Data safety form like this once the sign-in version is live:
 | Can users request that their data be deleted? | **Yes**. Give `https://npp-prog.github.io/pundo/delete-account.html` |
 | Data types: **Personal info → Email address** | Collected; required for sign-in; purpose: *Account management*; not shared |
 | Data types: **Financial info → Other financial info** (the user's own records) | Collected; optional (only with sync); purpose: *App functionality*; not shared |
+| Data types: **Personal info → Name** | Collected (Google sign-in profile); optional; purpose: *Account management*; not shared |
+| Data types: **Financial info → Purchase history** | Collected (sync subscription status from Google Play); optional; purpose: *App functionality*; not shared |
 
 Also, under **App content → Account deletion**, give the same `https://npp-prog.github.io/pundo/delete-account.html` link, and note that accounts can also be deleted in the app (*Settings → Sync across devices → Delete account*).
 

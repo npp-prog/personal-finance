@@ -15,3 +15,15 @@ window.PUNDO_FIREBASE_CONFIG = {
   "messagingSenderId": "942596972707",
   "appId": "1:942596972707:android:685a1018b4d3424583df16"
 };
+
+/*
+ * Cloud sync is a paid add-on (Google Play subscription). The rest of Pundo is free.
+ * required: false switches the paywall off (everyone who signs in can sync; firestore.rules must
+ * then also allow it). productId must match the subscription created in Play Console.
+ */
+window.PUNDO_SUBSCRIPTION = {
+  "required": true,
+  "productId": "pundo_sync",
+  "price": "₱50",
+  "functionsRegion": "asia-southeast1"
+};
