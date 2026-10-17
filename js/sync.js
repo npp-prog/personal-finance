@@ -63,7 +63,20 @@
     const serverTime = () => fb.firestore.FieldValue.serverTimestamp();
     const entryRef = (uid, id) => db.doc('users/' + uid + '/entries/' + id);
     const metaRef = (uid) => db.doc('users/' + uid + '/meta/book');
-    const toUser = (u) => (u ? { uid: u.uid, email: u.email, verified: !!u.emailVerified } : null);
+    const toUser = (u) => (u ? { uid: u.uid, email: u.email, verified: !!u.emailVerified, providers: (u.providerData || []).map((p) => p.providerId) } : null);
+    // Google sign-in: native account picker in the Android app (Google blocks sign-in pages inside
+    // app web views), the standard pop-up in a browser.
+    const nativeAuth = () => {
+      const C = window.Capacitor;
+      return C && C.isNativePlatform && C.isNativePlatform() && C.Plugins && C.Plugins.FirebaseAuthentication;
+    };
+    const googleCredential = async () => {
+      const r = await nativeAuth().signInWithGoogle();
+      const idToken = r && r.credential && r.credential.idToken;
+      if (!idToken) throw Object.assign(new Error('Google did not return a sign-in token.'), { code: 'google/no-token' });
+      return fb.auth.GoogleAuthProvider.credential(idToken);
+    };
+    const googleProvider = () => { const p = new fb.auth.GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' }); return p; };
 
     return {
       onAuth: (cb) => auth.onAuthStateChanged((u) => cb(toUser(u))),
@@ -72,8 +85,19 @@
         try { await cred.user.sendEmailVerification(); } catch (e) { /* optional */ }
       },
       signIn: (email, password) => auth.signInWithEmailAndPassword(email, password),
+      async signInWithGoogle() {
+        if (nativeAuth()) return auth.signInWithCredential(await googleCredential());
+        try { return await auth.signInWithPopup(googleProvider()); }
+        catch (err) {
+          if (err && err.code === 'auth/popup-blocked') return auth.signInWithRedirect(googleProvider());
+          throw err;
+        }
+      },
       resetPassword: (email) => auth.sendPasswordResetEmail(email),
-      signOut: () => auth.signOut(),
+      async signOut() {
+        if (nativeAuth()) { try { await nativeAuth().signOut(); } catch (e) { /* not signed in natively */ } }
+        await auth.signOut();
+      },
       async write(uid, ops, meta) {
         // Firestore batches hold up to 500 writes.
         for (let i = 0; i < Math.max(ops.length, meta ? 1 : 0); i += 450) {
@@ -115,6 +139,12 @@
       },
       async reauthenticate(password) {
         const u = auth.currentUser;
+        const viaGoogle = (u.providerData || []).some((p) => p.providerId === 'google.com') && !password;
+        if (viaGoogle) {
+          if (nativeAuth()) await u.reauthenticateWithCredential(await googleCredential());
+          else await u.reauthenticateWithPopup(googleProvider());
+          return;
+        }
         await u.reauthenticateWithCredential(fb.auth.EmailAuthProvider.credential(u.email, password));
       },
       deleteUser: () => auth.currentUser.delete(),
@@ -278,13 +308,26 @@
       'auth/too-many-requests': 'Too many attempts. Wait a few minutes and try again.',
       'auth/network-request-failed': 'No internet connection.',
       'auth/requires-recent-login': 'For your security, enter your password again.',
+      'auth/popup-closed-by-user': '',
+      'auth/cancelled-popup-request': '',
+      'auth/user-cancelled': '',
+      'auth/unauthorized-domain': 'This website is not allowed to use Google sign-in yet. In Firebase: Authentication → Settings → Authorized domains → add this site\'s domain.',
+      'auth/account-exists-with-different-credential': 'This email already has a Pundo account with a password. Sign in with your email and password instead.',
+      'auth/internal-error': 'Could not start Google sign-in. In the Firebase console make sure Authentication is turned on (Authentication → Get started) and Google is enabled under Sign-in method.',
+      'google/no-token': 'Google sign-in did not finish. Please try again.',
       'auth/configuration-not-found': 'Sign-in is not switched on yet. In the Firebase console open Authentication → Get started → Email/Password → Enable.',
       'auth/operation-not-allowed': 'Email/password sign-in is not enabled. In the Firebase console open Authentication → Sign-in method → Email/Password → Enable.',
       'permission-denied': 'The cloud refused access. Check the Firestore security rules, or sign out and sign in again.',
       'failed-precondition': 'The cloud database is not set up yet. In the Firebase console open Firestore Database → Create database.',
       unavailable: 'Cannot reach the cloud right now — changes are saved and will sync later.',
     };
-    return map[code] || (err && err.message) || 'Something went wrong.';
+    if (code in map) return map[code];
+    const msg = String((err && err.message) || '');
+    if (/cancel/i.test(msg)) return ''; // user closed the Google account picker
+    if (/DEVELOPER_ERROR|\b10:|WILL_BE_OVERRIDDEN|No credentials available|default_web_client_id/i.test(msg)) {
+      return 'Google sign-in is not fully set up yet. Enable Google in Firebase Authentication, add the app\'s SHA-1 fingerprints, and update google-services.json (see FIREBASE_SETUP.md).';
+    }
+    return msg || 'Something went wrong.';
   }
 
   // ---------------------------------------------------------------------------
@@ -310,6 +353,9 @@
     syncNow() { if (user) { setStatus('syncing'); schedulePush(0); } },
     async signIn(email, password) { const a = await ensureAdapter(); if (!a) throw new Error('Sync is not available.'); await a.signIn(email, password); },
     async signUp(email, password) { const a = await ensureAdapter(); if (!a) throw new Error('Sync is not available.'); await a.signUp(email, password); },
+    async signInWithGoogle() { const a = await ensureAdapter(); if (!a) throw new Error('Sync is not available.'); await a.signInWithGoogle(); },
+    usesGoogle: () => !!(user && (user.providers || []).includes('google.com')),
+    usesPassword: () => !!(user && (user.providers || ['password']).includes('password')),
     async resetPassword(email) { const a = await ensureAdapter(); await a.resetPassword(email); },
     async signOut() {
       stop();

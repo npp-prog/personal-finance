@@ -126,7 +126,7 @@ The **People** page tracks money that specific people owe you and money you owe 
 
 ## Sync across devices (sign-in)
 
-**Settings → Sync across devices**: create an account with your email and a password, then sign in on your other devices.
+**Settings → Sync across devices**: tap **Continue with Google** (native Google account picker on Android, pop-up on the web), or create an account with your email and a password. Then sign in the same way on your other devices.
 * **What syncs:** every transaction, account, card, person and report setting, within a few seconds.
 * **Offline:** changes made offline are saved and sent when you're back online.
 * **Conflicts:** if the same entry is edited on two devices, the newest edit wins. Deletions reach every device.

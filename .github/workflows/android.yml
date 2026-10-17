@@ -80,13 +80,20 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon bundleRelease
+        run: ./gradlew --no-daemon bundleRelease assembleRelease
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: pundo-debug-apk-${{ env.VERSION_NAME }}
           path: android/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload signed release APK (install directly; Google sign-in works with this one)
+        if: steps.keystore.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pundo-release-apk-${{ env.VERSION_NAME }}
+          path: android/app/build/outputs/apk/release/*.apk
 
       - name: Upload release AAB
         if: steps.keystore.outputs.path != ''
@@ -99,7 +106,8 @@ jobs:
         run: |
           {
             echo "### Pundo ${VERSION_NAME} (versionCode ${VERSION_CODE})"
-            echo "- Debug APK: download the **pundo-debug-apk** artifact and install it on a device."
+            echo "- Debug APK: download the **pundo-debug-apk** artifact and install it on a device (Google sign-in does not work in debug builds)."
+            if [ -n "${{ steps.keystore.outputs.path }}" ]; then echo "- Signed release APK: **pundo-release-apk** — install directly to test Google sign-in."; fi
             if [ -n "${{ steps.keystore.outputs.path }}" ]; then
               echo "- Release AAB: download **pundo-release-aab** and upload it in Google Play Console."
             else

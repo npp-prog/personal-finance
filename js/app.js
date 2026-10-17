@@ -2310,6 +2310,8 @@
     if (!u) {
       return head +
         '<p class="small muted">Sign in to keep your books in sync on your phone, tablet and computer. Your data is stored in your own private space in the cloud; only you can read it. Without signing in, Pundo keeps working offline on this device.</p>' +
+        '<button class="google-btn" id="sy-google"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg><span>Continue with Google</span></button>' +
+        '<div class="or-line"><span>or use email</span></div>' +
         '<div class="form-grid"><label class="field">Email<input id="sy-email" type="email" autocomplete="email" inputmode="email"></label>' +
         '<label class="field">Password<input id="sy-pass" type="password" autocomplete="current-password"></label></div>' +
         '<div id="sy-err" class="notice err hidden" style="margin-top:10px"></div>' +
@@ -2317,7 +2319,7 @@
         '<p class="small muted" style="margin-top:10px">When you sign in, the data already on this device is merged with your account — nothing is deleted.</p></div>';
     }
     return head +
-      '<p>Signed in as <b>' + esc(u.email) + '</b>' + (u.verified ? '' : ' <span class="badge adj">Email not verified yet — check your inbox</span>') + '</p>' +
+      '<p>Signed in as <b>' + esc(u.email) + '</b>' + ((u.providers || []).includes('google.com') ? ' <span class="badge">Google</span>' : (u.verified ? '' : ' <span class="badge adj">Email not verified yet — check your inbox</span>')) + '</p>' +
       '<p class="small" data-sync-status></p>' +
       '<div class="btn-row" style="margin-top:8px"><button class="primary" id="sy-now">Sync now</button><button id="sy-out">Sign out</button><button class="danger" id="sy-delete">Delete account</button></div>' +
       '<p class="small muted" style="margin-top:10px">Changes sync automatically in a few seconds. Offline changes are kept and sent when you are back online.</p></div>';
@@ -2327,12 +2329,18 @@
     const S = window.PundoSync;
     if (!S || !$('#sync-card')) return;
     S.prepare(); // load the cloud library in the background so sign-in is quick
-    const errBox = (msg) => { const el = $('#sy-err'); if (el) { el.textContent = msg; el.classList.remove('hidden'); } };
+    const errBox = (msg) => { const el = $('#sy-err'); if (el && msg) { el.textContent = msg; el.classList.remove('hidden'); } };
     const creds = () => ({ email: ($('#sy-email') || {}).value.trim(), pass: ($('#sy-pass') || {}).value });
     const busy = (btn, label, fn) => async () => {
       const old = btn.textContent; btn.disabled = true; btn.textContent = label;
       try { await fn(); } catch (err) { errBox(S.friendlyError(err)); } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = old; } }
     };
+    if ($('#sy-google')) {
+      $('#sy-google').onclick = busy($('#sy-google'), 'Opening Google…', async () => {
+        await S.signInWithGoogle();
+        if (S.user()) { toast('Signed in with Google — syncing your books…'); rerender(); }
+      });
+    }
     if ($('#sy-signin')) {
       $('#sy-signin').onclick = busy($('#sy-signin'), 'Signing in…', async () => {
         const c = creds(); if (!c.email || !c.pass) return errBox('Enter your email and password.');
@@ -2357,16 +2365,19 @@
       $('#sy-delete').onclick = async () => {
         const ok = await requireCode('Delete your Pundo account', 'Deletes your sign-in and <b>all synced data in the cloud</b>. The books on this device stay. Other devices stop syncing.');
         if (!ok) return;
-        showDialog('Confirm with your account password',
-          '<p class="small muted">For your security, enter the password of <b>' + esc(S.user().email) + '</b>.</p>' +
-          '<label class="field">Account password<input id="sy-del-pass" type="password" autocomplete="current-password"></label>',
-          ['', '<button data-act="cancel">Cancel</button><button class="primary danger-fill" data-act="del">Delete account</button>']);
-        $('#sy-del-pass', dialog).focus();
+        const viaGoogle = S.usesGoogle() && !S.usesPassword();
+        showDialog(viaGoogle ? 'Confirm with Google' : 'Confirm with your account password',
+          viaGoogle
+            ? '<p class="small muted">For your security, Google will ask you to choose <b>' + esc(S.user().email) + '</b> again.</p><input id="sy-del-pass" type="hidden" value="">'
+            : '<p class="small muted">For your security, enter the password of <b>' + esc(S.user().email) + '</b>.</p>' +
+              '<label class="field">Account password<input id="sy-del-pass" type="password" autocomplete="current-password"></label>',
+          ['', '<button data-act="cancel">Cancel</button><button class="primary danger-fill" data-act="del">' + (viaGoogle ? 'Confirm with Google & delete' : 'Delete account') + '</button>']);
+        if (!viaGoogle) $('#sy-del-pass', dialog).focus();
         dialogAction('cancel', closeDialog);
         dialogAction('del', async () => {
           const btn = $('[data-act="del"]', dialog); btn.disabled = true; btn.textContent = 'Deleting…';
           try { await S.deleteAccount($('#sy-del-pass', dialog).value); closeDialog(); toast('Your account and cloud data were deleted'); rerender(); }
-          catch (err) { btn.disabled = false; btn.textContent = 'Delete account'; dialogError(S.friendlyError(err)); }
+          catch (err) { btn.disabled = false; btn.textContent = 'Delete account'; const m = S.friendlyError(err); if (m) dialogError(m); }
         });
       };
     }
