@@ -95,7 +95,7 @@ Every run gets a higher version code automatically, which Play requires for each
 
 Google Play needs a public link to a privacy policy.
 
-1. Open `privacy.html` and replace `YOUR-EMAIL@example.com` with your support email.
+1. The support email in `privacy.html` and `delete-account.html` is already filled in (change it there if needed).
 2. Publish it using either option:
    - **GitHub Pages:**
      1. Go to **Settings → Pages → Deploy from a branch**, and choose this branch and `/ (root)`.
