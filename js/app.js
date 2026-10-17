@@ -449,6 +449,61 @@
     ['#dc2626', 'Red'], ['#ea580c', 'Orange'], ['#ca8a04', 'Gold'], ['#475569', 'Slate'], ['#111827', 'Black'],
   ];
   const isHex = (c) => /^#[0-9a-f]{6}$/i.test(c || '');
+  // Only cash & cash equivalents and credit cards get tiles in the Bank register.
+  const isTileAccount = (a) => !!a && !a.personId && !a.archived && ['cash', 'credit_card'].includes(L.classify(a));
+
+  const CARD_STYLES = [['classic', 'Classic'], ['rays', 'Rays'], ['waves', 'Waves'], ['minimal', 'Minimal']];
+  const CARD_NETWORKS = ['', 'Mastercard', 'Visa', 'JCB', 'American Express', 'UnionPay', 'Bancnet', 'GCash', 'Maya'];
+
+  function defaultCardColor(a) {
+    return L.classify(a) === 'credit_card' ? '#1f2937' : a.subtype === 'savings' ? '#0e7490' : a.subtype === 'cash' ? '#475569' : '#016327';
+  }
+  function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function shade(h, f) { // f < 0 darkens toward black
+    const [r, g, b] = hexToRgb(h).map((v) => Math.round(f < 0 ? v * (1 + f) : v + (255 - v) * f));
+    return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+  }
+  function luminance(h) {
+    const [r, g, b] = hexToRgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function cardTypeLabel(a) {
+    if (L.classify(a) === 'credit_card') return 'credit';
+    return a.subtype === 'savings' ? 'savings' : a.subtype === 'cash' ? 'cash' : 'debit';
+  }
+
+  const CHIP_SVG = '<svg class="cc-chip" viewBox="0 0 40 30" aria-hidden="true"><rect x="1" y="1" width="38" height="28" rx="5" fill="#d9b25f" stroke="#a8823a"/><path d="M1 10h11M1 20h11M28 10h11M28 20h11M12 1v28M28 1v28M12 15h16" stroke="#a8823a" fill="none"/></svg>';
+  const NFC_SVG = '<svg class="cc-nfc" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8.5 8.5a5 5 0 010 7M12 6a8.5 8.5 0 010 12M15.5 3.5a12 12 0 010 17"/></svg>';
+  const WALLET_SVG = '<svg class="cc-nfc" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h14a2 2 0 012 2v9a2 2 0 01-2 2H4z"/><path d="M4 7V6a2 2 0 012-2h10v3"/><circle cx="16" cy="13.5" r="1.2"/></svg>';
+
+  /**
+   * A register tile. Card design (default) looks like a debit/credit card in the account's colour;
+   * the simple design is the plain tile. `tag` is 'a' for a link or 'div' for a preview.
+   */
+  function accountTile(a, balance, opts) {
+    opts = opts || {};
+    const tag = opts.tag || 'a';
+    const href = tag === 'a' ? ' href="#/register?account=' + a.id + '"' : '';
+    const on = opts.selected ? ' on' : '';
+    if (a.tileDesign === 'simple') {
+      return '<' + tag + href + ' class="acct-tile' + on + (isHex(a.color) ? ' has-color' : '') + '"' + (isHex(a.color) ? ' style="--acct-color:' + a.color + '"' : '') + '>' +
+        '<div class="small muted">' + esc(CLASS_LABEL[L.classify(a)]) + '</div><div class="nm">' + esc(displayName(a)) + '</div>' +
+        '<div class="bal">' + money(balance) + '</div></' + tag + '>';
+    }
+    const c = isHex(a.color) ? a.color : defaultCardColor(a);
+    // Pick the text colour with the higher contrast against the card colour.
+    const L1 = luminance(c), ink = (1.05 / (L1 + 0.05)) >= ((L1 + 0.05) / 0.057) ? '#ffffff' : '#141414';
+    const style = CARD_STYLES.some(([k]) => k === a.cardStyle) ? a.cardStyle : 'classic';
+    const isCard = a.subtype !== 'cash';
+    const isCredit = L.classify(a) === 'credit_card';
+    return '<' + tag + href + ' class="acct-tile cc cc-' + style + on + '" style="--c:' + c + ';--c2:' + shade(c, -0.45) + ';--c3:' + shade(c, 0.18) + ';--ink:' + ink + '" aria-label="' + esc(displayName(a)) + ', ' + (isCredit ? 'balance owed ' : 'balance ') + esc(money(balance)) + '">' +
+      '<div class="cc-top"><span class="cc-bank">' + esc(a.institution || a.name) + '</span><span class="cc-type">' + cardTypeLabel(a) + '</span></div>' +
+      '<div class="cc-mid">' + (isCard ? CHIP_SVG + NFC_SVG : WALLET_SVG) + '<span class="cc-bal"><span class="cc-bal-l">' + (isCredit ? 'Balance owed' : 'Balance') + '</span>' + money(balance) + '</span></div>' +
+      '<div class="cc-num">' + (a.last4 ? '•••• •••• •••• ' + esc(a.last4) : esc(a.institution ? a.name : '')) + '</div>' +
+      '<div class="cc-bottom"><span class="cc-holder nm">' + esc((a.holder || a.name).toUpperCase()) + '</span><span class="cc-net">' + esc(a.network || '') + '</span></div>' +
+      '</' + tag + '>';
+  }
+
   /** A small coloured dot for an account (empty when it has no colour). */
   function colorDot(a) { return a && isHex(a.color) ? '<span class="acct-dot" style="--acct-color:' + a.color + '"></span>' : ''; }
 
@@ -813,6 +868,12 @@
       ACCOUNT_COLORS.map(([c, n]) => '<button type="button" class="swatch' + (a && a.color && a.color.toLowerCase() === c ? ' on' : '') + '" data-color="' + c + '" style="--acct-color:' + c + '" title="' + n + '" aria-label="' + n + '"></button>').join('') +
       '<label class="swatch custom' + (a && isHex(a.color) && !ACCOUNT_COLORS.some(([c]) => c === a.color.toLowerCase()) ? ' on' : '') + '" title="Custom colour"><input type="color" id="f-color-custom" value="' + (a && isHex(a.color) ? a.color : '#15803d') + '" aria-label="Custom colour"></label>' +
       '</div><input type="hidden" id="f-color" value="' + esc(a && isHex(a.color) ? a.color : '') + '"></div>' +
+      '<div class="full tile-only"><div class="design-row">' +
+      '<label class="field">Tile design<select id="f-design"><option value="card">Card (like a debit / credit card)</option><option value="simple"' + (a && a.tileDesign === 'simple' ? ' selected' : '') + '>Simple tile</option></select></label>' +
+      '<label class="field card-opt">Card pattern<select id="f-style">' + CARD_STYLES.map(([k, l]) => '<option value="' + k + '"' + (a && a.cardStyle === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' +
+      '<label class="field card-opt">Name on card<input id="f-holder" maxlength="40" value="' + esc(a && a.holder || '') + '" placeholder="Shown at the bottom of the card"></label>' +
+      '<label class="field card-opt">Card network<select id="f-network">' + CARD_NETWORKS.map((n) => '<option value="' + esc(n) + '"' + (a && (a.network || '') === n ? ' selected' : '') + '>' + (n || 'None') + '</option>').join('') + '</select></label>' +
+      '</div><div class="small muted" style="margin:8px 0 6px">Preview</div><div id="tile-preview" class="tile-preview"></div></div>' +
       (a ? '' :
         '<label class="field bs">Opening balance<input id="f-open" inputmode="decimal" placeholder="0.00"></label>' +
         '<label class="field bs">As of<input id="f-open-date" type="date" value="' + L.addDays(today(), -1) + '"></label>' +
@@ -838,10 +899,29 @@
     };
     kindSel.onchange = updateKind;
     updateKind();
+    const draftAccount = () => {
+      const [type, subtype] = kindSel.value.split(':');
+      return { id: 'preview', type, subtype, name: $('#f-name', dialog).value.trim() || 'Account name', institution: $('#f-inst', dialog).value.trim(),
+        last4: $('#f-last4', dialog).value.trim(), color: $('#f-color', dialog).value, tileDesign: $('#f-design', dialog).value,
+        cardStyle: $('#f-style', dialog).value, holder: $('#f-holder', dialog).value.trim(), network: $('#f-network', dialog).value };
+    };
+    const updatePreview = () => {
+      const d = draftAccount();
+      const tileable = isTileAccount(d);
+      $$('.tile-only', dialog).forEach((el) => el.classList.toggle('hidden', !tileable));
+      $$('.card-opt', dialog).forEach((el) => el.classList.toggle('hidden', d.tileDesign === 'simple'));
+      if (!tileable) return;
+      const bal = a ? L.balanceOf(book, a.id, { to: today() }) : (L.toCents(($('#f-open', dialog) || {}).value || '0') || 0);
+      $('#tile-preview', dialog).innerHTML = accountTile(d, bal, { tag: 'div', selected: false });
+    };
     const pickColor = (c, el) => {
       $('#f-color', dialog).value = c;
       $$('.swatch', dialog).forEach((x) => x.classList.toggle('on', x === el));
+      updatePreview();
     };
+    ['#f-name', '#f-inst', '#f-last4', '#f-design', '#f-style', '#f-holder', '#f-network', '#f-open'].forEach((sel) => { const el = $(sel, dialog); if (el) el.addEventListener('input', updatePreview); });
+    kindSel.addEventListener('change', updatePreview);
+    updatePreview();
     $$('.swatch[data-color]', dialog).forEach((b) => b.onclick = () => pickColor(b.dataset.color, b));
     $('#f-color-custom', dialog).addEventListener('input', (e) => pickColor(e.target.value, e.target.closest('.swatch')));
     $('#f-name', dialog).focus();
@@ -858,8 +938,10 @@
       if (!name) return dialogError('Name is required.');
       const [type, subtype] = kindSel.value.split(':');
       const color = $('#f-color', dialog).value;
-      const fields = { name, institution: $('#f-inst', dialog).value.trim() || undefined, last4: $('#f-last4', dialog).value.trim() || undefined, color: isHex(color) ? color : undefined };
-      if (!['asset', 'liability'].includes(type)) { delete fields.institution; delete fields.last4; delete fields.color; }
+      const fields = { name, institution: $('#f-inst', dialog).value.trim() || undefined, last4: $('#f-last4', dialog).value.trim() || undefined, color: isHex(color) ? color : undefined,
+        tileDesign: $('#f-design', dialog).value === 'simple' ? 'simple' : undefined, cardStyle: $('#f-style', dialog).value,
+        holder: $('#f-holder', dialog).value.trim() || undefined, network: $('#f-network', dialog).value || undefined };
+      if (!['asset', 'liability'].includes(type)) { ['institution', 'last4', 'color', 'tileDesign', 'cardStyle', 'holder', 'network'].forEach((k) => delete fields[k]); }
       if (a) {
         Object.assign(a, fields);
         if (!a.system) { a.type = type; a.subtype = subtype; }
@@ -1141,11 +1223,15 @@
   }
 
   function renderRegister(accountId) {
-    const bsAccounts = activeAccounts((x) => isBalanceSheet(x) && !x.personId);
-    const a = acct(accountId || regState.accountId || prefs.lastRegister) && isBalanceSheet(acct(accountId || regState.accountId || prefs.lastRegister))
-      ? acct(accountId || regState.accountId || prefs.lastRegister)
-      : bsAccounts.find((x) => L.classify(x) === 'cash' && x.id !== 'acc_cash') || bsAccounts[0];
-    if (!a) { main.innerHTML = '<div class="card empty">Add a bank account or card first.</div>'; return; }
+    // Tiles: cash & cash equivalents and credit cards only. Other balance-sheet accounts
+    // (investments, loans, property…) still open here from Accounts & cards — just without a tile.
+    const tileAccounts = activeAccounts(isTileAccount);
+    const requested = acct(accountId);
+    const remembered = acct(regState.accountId || prefs.lastRegister);
+    const a = requested && isBalanceSheet(requested) && !requested.personId ? requested
+      : isTileAccount(remembered) ? remembered
+        : tileAccounts.find((x) => x.subtype !== 'cash') || tileAccounts[0];
+    if (!a) { main.innerHTML = '<div class="card empty">Add a bank account, debit card or credit card first. <a href="#/accounts">Accounts &amp; cards</a></div>'; return; }
     if (regState.accountId !== a.id) {
       Object.assign(regState, { accountId: a.id, editing: null, error: '', draft: null, stmtDate: '', stmtBal: '' });
     }
@@ -1167,11 +1253,9 @@
     const payees = Array.from(new Set(book.entries.map((e) => (e.description || '').trim()).filter(Boolean))).sort();
 
     // Strip of account tiles (QBO-style bank cards).
-    const strip = '<div class="acct-strip">' + bsAccounts.map((x) =>
-      '<a href="#/register?account=' + x.id + '" class="acct-tile' + (x.id === a.id ? ' on' : '') + (isHex(x.color) ? ' has-color' : '') + '"' + (isHex(x.color) ? ' style="--acct-color:' + x.color + '"' : '') + '>' +
-      '<div class="small muted">' + esc(CLASS_LABEL[L.classify(x)]) + '</div><div class="nm">' + esc(displayName(x)) + '</div>' +
-      '<div class="bal">' + money(bals.get(x.id).balance) + '</div></a>').join('') +
-      '<a href="#/accounts" class="acct-tile add" id="reg-add-acct"><div class="nm">+ Add account / card</div></a></div>';
+    const strip = '<div class="acct-strip">' + tileAccounts.map((x) => accountTile(x, bals.get(x.id).balance, { selected: x.id === a.id })).join('') +
+      '<a href="#/accounts" class="acct-tile add" id="reg-add-acct"><div class="nm">+ Add account / card</div></a></div>' +
+      (isTileAccount(a) ? '' : '<div class="notice" style="background:var(--surface-2);margin:0 0 12px">Viewing <b>' + esc(displayName(a)) + '</b> (' + esc(L.SUBTYPES[a.type][a.subtype] || '') + '). Only bank, cash and credit card accounts have tiles — open other accounts from <a href="#/accounts">Accounts &amp; cards</a>.</div>');
 
     const inputRow = (cls, v) =>
       '<tr class="' + cls + '"' + (v.id ? ' data-id="' + v.id + '"' : '') + '>' +
@@ -1256,6 +1340,11 @@
     $('#reg-sbal').onchange = (e) => { regState.stmtBal = e.target.value; rerender(); };
     $('#reg-import').onclick = () => openImportDialog(a.id);
     $('#reg-edit-acct').onclick = () => openAccountDialog(a.id);
+    const selTile = $('.acct-strip .acct-tile.on');
+    if (selTile) { // bring the selected card into view only when it is hidden off the side
+      const strip = selTile.parentElement, sr = strip.getBoundingClientRect(), tr = selTile.getBoundingClientRect();
+      if (tr.left < sr.left || tr.right > sr.right) strip.scrollLeft += tr.left - sr.left - 16;
+    }
     $('#reg-add-acct').onclick = (e) => { e.preventDefault(); openAccountDialog(); };
 
     // Read-only rows: click to edit inline (splits open the journal editor).
@@ -1927,10 +2016,11 @@
       '<div class="page-head"><div><h1>Financial statements</h1><div class="sub">Income statement, balance sheet and cash flow — ready to print or export.</div></div>' +
       '<div class="btn-row"><button id="st-csv">Export CSV</button><button data-print>Print / PDF</button></div></div>' +
       '<div class="toolbar"><div class="segmented">' + tabs.map(([k, l]) => '<button data-tab="' + k + '" class="' + (stState.tab === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
-      pt.html + '</div>' +
+      pt.html + '<label class="field" style="flex:1;min-width:220px">Name above statements<input id="st-owner" value="' + esc(book.ownerName || '') + '" placeholder="e.g. ABC Company Store" maxlength="80"></label></div>' +
       '<div class="card statement-card">' + content + '</div>';
     pt.bind(main);
     $$('[data-tab]').forEach((b) => b.onclick = () => { stState.tab = b.dataset.tab; rerender(); });
+    $('#st-owner').onchange = (e) => { book.ownerName = e.target.value.trim() || undefined; commit(); toast(book.ownerName ? 'Name updated' : 'Name removed'); };
     $('#st-csv').onclick = () => {
       const rows = $$('.statement tr').map((tr) => $$('td', tr).map((td) => '"' + td.textContent.trim().replace(/"/g, '""') + '"').join(','));
       download('statement-' + stState.tab + '-' + r.to + '.csv', rows.join('\n'), 'text/csv');
@@ -1938,7 +2028,8 @@
   }
 
   function stHead(title, sub) {
-    return '<div class="st-head"><div class="muted small">' + esc(book.ownerName ? book.ownerName + ' — personal financial statements' : 'Personal financial statements') + '</div><div class="title">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div></div>';
+    return '<div class="st-head">' + (book.ownerName ? '<div class="st-entity">' + esc(book.ownerName) + '</div>' : '') +
+      '<div class="title">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div></div>';
   }
   function line(label, cents, cls, opts) {
     opts = opts || {};
@@ -2092,7 +2183,7 @@
       '<div class="grid grid-2">' +
       '<div class="card"><h2>Preferences</h2><div class="form-grid">' +
       '<label class="field">Currency code<input id="s-cur" value="' + esc(book.currency) + '" maxlength="3" placeholder="PHP, USD, EUR…"></label>' +
-      '<label class="field full">Name on reports<input id="s-owner" value="' + esc(book.ownerName || '') + '" placeholder="e.g. Maria Santos — shown at the top of printed statements"></label>' +
+      '<label class="field full">Name above financial statements<input id="s-owner" value="' + esc(book.ownerName || '') + '" placeholder="e.g. ABC Company Store or Maria Santos" maxlength="80"></label>' +
       '<label class="field">Theme<select id="s-theme"><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>' +
       '</div></div>' +
       '<div class="card"><h2>Backup &amp; restore</h2>' +
@@ -2162,10 +2253,10 @@
   function sampleBook() {
     const b = L.emptyBook();
     const add = (id, name, type, subtype, extra) => { b.accounts.push(Object.assign({ id, name, type, subtype }, extra || {})); return id; };
-    add('s_chk', 'Everyday Checking (Debit)', 'asset', 'checking', { institution: 'First Bank', last4: '4821', color: '#1d4ed8' });
-    add('s_sav', 'High-Yield Savings', 'asset', 'savings', { institution: 'First Bank', last4: '9930', color: '#0e7490' });
-    add('s_visa', 'Rewards Visa', 'liability', 'credit_card', { institution: 'Card Co', last4: '1007', color: '#111827' });
-    add('s_mc', 'Travel Mastercard', 'liability', 'credit_card', { institution: 'Travel Bank', last4: '5562', color: '#dc2626' });
+    add('s_chk', 'Everyday Checking (Debit)', 'asset', 'checking', { institution: 'First Bank', last4: '4821', color: '#8b1a1a', cardStyle: 'rays', holder: 'Alex Santos', network: 'Mastercard' });
+    add('s_sav', 'High-Yield Savings', 'asset', 'savings', { institution: 'First Bank', last4: '9930', color: '#0e7490', cardStyle: 'waves', holder: 'Alex Santos' });
+    add('s_visa', 'Rewards Visa', 'liability', 'credit_card', { institution: 'Card Co', last4: '1007', color: '#111827', cardStyle: 'classic', holder: 'Alex Santos', network: 'Visa' });
+    add('s_mc', 'Travel Mastercard', 'liability', 'credit_card', { institution: 'Travel Bank', last4: '5562', color: '#ca8a04', cardStyle: 'minimal', holder: 'Alex Santos', network: 'Mastercard' });
     add('s_brk', 'Brokerage Account', 'asset', 'investment', { institution: 'Broker Inc', color: '#7c3aed' });
     add('s_401k', 'Retirement Fund', 'asset', 'retirement', { color: '#ca8a04' });
     add('s_car', 'Car', 'asset', 'vehicle');

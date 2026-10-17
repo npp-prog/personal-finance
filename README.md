@@ -134,9 +134,26 @@ Bulk changes need a **security code**: **Erase everything**, **Load sample data*
 * **Change it:** go to **Settings → Security code**.
 * **Storage:** the code is kept only as a salted SHA-256 hash on the device. It's never saved in plain text and never included in backup files.
 
-## Account colours
+## Register tiles & card designs
 
-Give each bank account or card a colour: pick one of ten presets or any custom colour. Edit the account from **Accounts & cards** or with the **Edit** link in the Bank register. The colour shows as a stripe on the register tiles and a dot in the account lists.
+* **Which accounts get tiles:** only **cash & cash equivalents** (cash on hand, bank and debit accounts, savings) and **credit cards**. Investments, loans, property and other accounts still work as usual: open their register from **Accounts & cards**.
+* **Card design (default):** each tile looks like a real card:
+  * your chosen colour and pattern (**Classic**, **Rays**, **Waves** or **Minimal**)
+  * a chip and contactless symbol (a wallet symbol for cash on hand)
+  * bank name and card type (debit, savings or credit)
+  * last 4 digits and the name on the card
+  * an optional card network name
+  * the balance (the balance owed, for credit cards)
+* **Text colour:** white or dark, whichever has more contrast against the card's colour.
+* **Simple design:** you can switch any account back to the plain tile.
+* **Editing:** change all of this in the account form, under **Accounts & cards** or the **Edit** link in the register. The form shows a live preview.
+* **Logos:** bank and card-network logos aren't reproduced, because they're trademarks. The names are shown as text.
+
+## Name above financial statements
+
+Set a name, such as **ABC Company Store**, under **Financial statements** (*Name above statements*) or **Settings**.
+* It's printed in capitals above the income statement, balance sheet, cash flow statement, general ledger and statements of account.
+* Leave it empty to show no name.
 
 ## Development
 
