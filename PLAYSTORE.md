@@ -118,7 +118,7 @@ As a bonus, GitHub Pages also hosts the web version of the app at `.../personal-
    | App access | All functionality is available without special access |
    | Content rating | Complete the questionnaire. It's a utility with no user content, which normally rates *Everyone* |
    | Target audience | 18 and over |
-   | Data safety | No data collected, no data shared. Everything is stored on the device; there are no servers or analytics. Android's own backup to the user's Google account doesn't count as collection by you. You may tick *"Data is backed up with Android backup"* where the form offers it |
+   | Data safety | **With sync (from version with sign-in):** see the *Data safety with sync* table below. Without sync: no data collected |
    | Financial features | A personal finance tracking and budgeting tool only. No loans, payments, banking or crypto exchange |
    | Government apps | No |
 
@@ -132,6 +132,20 @@ As a bonus, GitHub Pages also hosts the web version of the app at `.../personal-
    1. **New personal developer accounts:** Google currently requires a **closed test with at least 12 testers for 14 days in a row** before you can apply for production. Create the closed test under **Testing → Closed testing** and invite the testers.
    2. Once the 14 days are up, apply for production access in the Dashboard, then **promote the release to Production**.
    3. Google's review usually takes a few days.
+
+## Data safety with sync
+
+Answer the Data safety form like this once the sign-in version is live:
+
+| Question | Answer |
+|---|---|
+| Does your app collect or share user data? | **Yes**, it collects data. It doesn't share it. |
+| Is all collected data encrypted in transit? | **Yes** |
+| Can users request that their data be deleted? | **Yes**. Give the URL of `delete-account.html`, hosted the same way as the privacy policy |
+| Data types: **Personal info → Email address** | Collected; required for sign-in; purpose: *Account management*; not shared |
+| Data types: **Financial info → Other financial info** (the user's own records) | Collected; optional (only with sync); purpose: *App functionality*; not shared |
+
+Also, under **App content → Account deletion**, give the same `delete-account.html` link, and note that accounts can also be deleted in the app (*Settings → Sync across devices → Delete account*).
 
 ## 6. Releasing updates
 

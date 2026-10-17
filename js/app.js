@@ -16,6 +16,7 @@
     try { localStorage.removeItem(OLD_PRACTICE_KEY); localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
   }
   let book = load();
+  let sigs = computeSigs(book); // snapshot used to detect what changed since the last save (for sync)
 
   function load() {
     const b = readBook(STORAGE_KEY);
@@ -37,10 +38,127 @@
   }
 
   function save() {
+    trackChanges();
     book.updatedAt = new Date().toISOString();
+    writeBook();
+    if (window.PundoSync) window.PundoSync.localChanged();
+  }
+
+  function writeBook() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(book)); }
     catch (e) { toast('Could not save to browser storage — export a backup from Settings.'); }
     scheduleAutoBackup();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Change tracking for sync. Every save compares the book with the last snapshot: new or
+  // edited entries get a fresh updatedAt, removed entries leave a tombstone (only once this
+  // device is linked to an account) and account/people/settings changes stamp metaUpdatedAt.
+  // Doing it here means every edit path in the app is covered automatically.
+  // ---------------------------------------------------------------------------
+
+  function entrySig(e) { const c = Object.assign({}, e); delete c.updatedAt; return JSON.stringify(c); }
+  function metaOf(b) {
+    return { accounts: b.accounts, people: b.people || [], currency: b.currency, ownerName: b.ownerName || null, currencyChosen: !!b.currencyChosen };
+  }
+  function computeSigs(b) {
+    const m = new Map();
+    for (const e of b.entries) m.set(e.id, entrySig(e));
+    return { entries: m, meta: JSON.stringify(metaOf(b)) };
+  }
+
+  function trackChanges() {
+    const now = new Date().toISOString();
+    const linked = !!(window.PundoSync && window.PundoSync.isLinked());
+    const seen = new Set();
+    for (const e of book.entries) {
+      seen.add(e.id);
+      if (sigs.entries.get(e.id) !== entrySig(e)) e.updatedAt = now;
+    }
+    if (linked) {
+      for (const id of sigs.entries.keys()) {
+        if (!seen.has(id)) (book.tombstones = book.tombstones || []).push({ id, at: now });
+      }
+    }
+    if (JSON.stringify(metaOf(book)) !== sigs.meta) book.metaUpdatedAt = now;
+    sigs = computeSigs(book);
+  }
+
+  // Remote changes arrive while the user may be typing; re-render only when it is safe.
+  let pendingRerender = false;
+  function busyEditing() {
+    const el = document.activeElement;
+    return dialog.open || (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && main.contains(el));
+  }
+  function safeRerender() {
+    if (busyEditing()) { pendingRerender = true; return; }
+    pendingRerender = false; rerender();
+  }
+  document.addEventListener('focusout', () => setTimeout(() => { if (pendingRerender && !busyEditing()) safeRerender(); }, 300));
+
+  const syncHooks = {
+    getBook: () => book,
+    metaOf,
+    replaceMeta(b, remote) {
+      b.accounts = remote.accounts || b.accounts;
+      b.people = remote.people || [];
+      if (remote.currency) b.currency = remote.currency;
+      b.ownerName = remote.ownerName || undefined;
+      b.currencyChosen = !!remote.currencyChosen;
+    },
+    /** First link on a device: keep accounts/people from both sides. */
+    mergeMeta(b, remote, remoteNewer) {
+      const merge = (mine, theirs) => {
+        const out = mine.slice();
+        const at = new Map(out.map((x, i) => [x.id, i]));
+        for (const t of theirs || []) {
+          if (!at.has(t.id)) { at.set(t.id, out.length); out.push(t); }
+          else if (remoteNewer) out[at.get(t.id)] = t;
+        }
+        return out;
+      };
+      b.accounts = merge(b.accounts, remote.accounts);
+      b.people = merge(b.people || [], remote.people);
+      if (remoteNewer) {
+        if (remote.currency) b.currency = remote.currency;
+        if (remote.ownerName) b.ownerName = remote.ownerName;
+        b.currencyChosen = !!remote.currencyChosen || !!b.currencyChosen;
+      }
+    },
+    applyRemote(mutate) {
+      mutate(book);
+      sigs = computeSigs(book); // remote changes are not local edits: don't re-stamp them
+      writeBook();
+      safeRerender();
+    },
+    pruneTombstones(mark) {
+      const before = (book.tombstones || []).length;
+      book.tombstones = (book.tombstones || []).filter((t) => t.at > mark);
+      if (book.tombstones.length !== before) writeBook();
+    },
+    onStatus: () => updateSyncStatusViews(),
+  };
+
+  function syncStatusText() {
+    const S = window.PundoSync;
+    if (!S || !S.available()) return '';
+    const st = S.status();
+    const u = S.user();
+    switch (st.state) {
+      case 'signedout': return '';
+      case 'syncing': return '☁ Syncing…';
+      case 'synced': return '☁ Synced' + (st.lastSyncAt ? ' · ' + new Date(st.lastSyncAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+      case 'offline': return '☁ Offline — changes saved, will sync when online';
+      case 'error': return '⚠ Sync problem: ' + (st.error || 'unknown');
+      default: return u ? '☁ Connected' : '';
+    }
+  }
+  function updateSyncStatusViews() {
+    const text = syncStatusText();
+    $$('[data-sync-status]').forEach((el) => { el.textContent = text; el.classList.toggle('hidden', !text); });
+    // The Settings card shows sign-in state; refresh it when auth changes.
+    const card = $('#sync-card');
+    if (card && card.dataset.user !== String(!!(window.PundoSync && window.PundoSync.user()))) safeRerender();
   }
 
   // ---------------------------------------------------------------------------
@@ -225,11 +343,16 @@
    * Ask for the security code before a bulk change. Resolves true when the user proves
    * it (or creates a code for the first time), false if they cancel.
    */
+  function syncNote() {
+    return window.PundoSync && window.PundoSync.user() ? '<br>☁ You are signed in: this change also reaches your other synced devices.' : '';
+  }
+
   function requireCode(action, detail) {
     return new Promise((resolve) => {
       let done = false;
       const finish = (ok) => { if (done) return; done = true; dialog.removeEventListener('close', onClose); if (ok) closeDialog(); resolve(ok); };
       const onClose = () => finish(false);
+      detail = (detail || '') + (detail ? syncNote() : '');
       const summary = '<div class="notice warn" style="margin-bottom:12px"><b>' + esc(action) + '</b>' + (detail ? '<div class="small" style="margin-top:4px">' + detail + '</div>' : '') + '</div>';
 
       const askCreate = (intro) => {
@@ -606,6 +729,7 @@
     $('#bar-title').textContent = navLink ? navLink.textContent.trim() : 'Pundo';
     $('#app').classList.remove('nav-open');
     routes[r.name](r.params);
+    updateSyncStatusViews();
   }
 
   function rerender() { render(); }
@@ -700,7 +824,7 @@
 
     main.innerHTML =
       '<div class="page-head"><div><h1>Dashboard</h1><div class="sub">As of ' + fmtDate(t) +
-      (L.closedThrough(book) ? ' · Books closed through ' + fmtDate(L.closedThrough(book)) : '') + '</div></div>' +
+      (L.closedThrough(book) ? ' · Books closed through ' + fmtDate(L.closedThrough(book)) : '') + ' <span class="sync-pill" data-sync-status></span></div></div>' +
       '<div class="btn-row"><button id="add-tx">+ Quick transaction</button><button id="add-acct">+ Account / card</button><a class="btn primary" href="#/register">Encode bank transactions</a></div></div>' +
       (backupDue() ? '<div class="notice warn backup-nudge"><span>💾 ' + (lastBackupAt() ? 'You have changes since your last backup on ' + fmtDate(lastBackupAt().slice(0, 10)) + '.' : 'Your data is only on this device. Make a backup so you never lose it.') + '</span><button class="primary" id="dash-backup">Back up now</button></div>' : '') +
       (hasAccounts ? '' : '<div class="notice warn">Start by adding your bank accounts, debit and credit cards, investments and other assets — or load sample data in <a href="#/settings">Settings</a> to explore first.</div>') +
@@ -2174,6 +2298,82 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Sync & account (Settings card)
+  // ---------------------------------------------------------------------------
+
+  function syncCardHTML() {
+    const S = window.PundoSync;
+    if (!S || !S.available()) return '';
+    const u = S.user();
+    const head = '<div class="card full-span" id="sync-card" data-user="' + !!u + '"><h2>☁ Sync across devices</h2>';
+    if (!u && S.isLinked()) return head + '<p class="small muted">Connecting to your account…</p></div>';
+    if (!u) {
+      return head +
+        '<p class="small muted">Sign in to keep your books in sync on your phone, tablet and computer. Your data is stored in your own private space in the cloud; only you can read it. Without signing in, Pundo keeps working offline on this device.</p>' +
+        '<div class="form-grid"><label class="field">Email<input id="sy-email" type="email" autocomplete="email" inputmode="email"></label>' +
+        '<label class="field">Password<input id="sy-pass" type="password" autocomplete="current-password"></label></div>' +
+        '<div id="sy-err" class="notice err hidden" style="margin-top:10px"></div>' +
+        '<div class="btn-row" style="margin-top:12px"><button class="primary" id="sy-signin">Sign in</button><button id="sy-signup">Create account</button><button class="link" id="sy-forgot">Forgot password?</button></div>' +
+        '<p class="small muted" style="margin-top:10px">When you sign in, the data already on this device is merged with your account — nothing is deleted.</p></div>';
+    }
+    return head +
+      '<p>Signed in as <b>' + esc(u.email) + '</b>' + (u.verified ? '' : ' <span class="badge adj">Email not verified yet — check your inbox</span>') + '</p>' +
+      '<p class="small" data-sync-status></p>' +
+      '<div class="btn-row" style="margin-top:8px"><button class="primary" id="sy-now">Sync now</button><button id="sy-out">Sign out</button><button class="danger" id="sy-delete">Delete account</button></div>' +
+      '<p class="small muted" style="margin-top:10px">Changes sync automatically in a few seconds. Offline changes are kept and sent when you are back online.</p></div>';
+  }
+
+  function bindSyncCard() {
+    const S = window.PundoSync;
+    if (!S || !$('#sync-card')) return;
+    S.prepare(); // load the cloud library in the background so sign-in is quick
+    const errBox = (msg) => { const el = $('#sy-err'); if (el) { el.textContent = msg; el.classList.remove('hidden'); } };
+    const creds = () => ({ email: ($('#sy-email') || {}).value.trim(), pass: ($('#sy-pass') || {}).value });
+    const busy = (btn, label, fn) => async () => {
+      const old = btn.textContent; btn.disabled = true; btn.textContent = label;
+      try { await fn(); } catch (err) { errBox(S.friendlyError(err)); } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = old; } }
+    };
+    if ($('#sy-signin')) {
+      $('#sy-signin').onclick = busy($('#sy-signin'), 'Signing in…', async () => {
+        const c = creds(); if (!c.email || !c.pass) return errBox('Enter your email and password.');
+        await S.signIn(c.email, c.pass); toast('Signed in — syncing your books…'); rerender();
+      });
+      $('#sy-signup').onclick = busy($('#sy-signup'), 'Creating…', async () => {
+        const c = creds(); if (!c.email || !c.pass) return errBox('Enter an email and choose a password (at least 6 characters).');
+        await S.signUp(c.email, c.pass); toast('Account created — we sent you a verification email'); rerender();
+      });
+      $('#sy-forgot').onclick = busy($('#sy-forgot'), 'Sending…', async () => {
+        const c = creds(); if (!c.email) return errBox('Type your email above first.');
+        await S.resetPassword(c.email); toast('Password reset email sent to ' + c.email);
+      });
+      $('#sy-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#sy-signin').click(); });
+    }
+    if ($('#sy-now')) {
+      $('#sy-now').onclick = () => { S.syncNow(); toast('Syncing…'); };
+      $('#sy-out').onclick = async () => {
+        if (!confirm('Sign out of sync? Your books stay on this device; they just stop syncing until you sign in again.')) return;
+        await S.signOut(); toast('Signed out'); rerender();
+      };
+      $('#sy-delete').onclick = async () => {
+        const ok = await requireCode('Delete your Pundo account', 'Deletes your sign-in and <b>all synced data in the cloud</b>. The books on this device stay. Other devices stop syncing.');
+        if (!ok) return;
+        showDialog('Confirm with your account password',
+          '<p class="small muted">For your security, enter the password of <b>' + esc(S.user().email) + '</b>.</p>' +
+          '<label class="field">Account password<input id="sy-del-pass" type="password" autocomplete="current-password"></label>',
+          ['', '<button data-act="cancel">Cancel</button><button class="primary danger-fill" data-act="del">Delete account</button>']);
+        $('#sy-del-pass', dialog).focus();
+        dialogAction('cancel', closeDialog);
+        dialogAction('del', async () => {
+          const btn = $('[data-act="del"]', dialog); btn.disabled = true; btn.textContent = 'Deleting…';
+          try { await S.deleteAccount($('#sy-del-pass', dialog).value); closeDialog(); toast('Your account and cloud data were deleted'); rerender(); }
+          catch (err) { btn.disabled = false; btn.textContent = 'Delete account'; dialogError(S.friendlyError(err)); }
+        });
+      };
+    }
+    updateSyncStatusViews();
+  }
+
+  // ---------------------------------------------------------------------------
   // Settings
   // ---------------------------------------------------------------------------
 
@@ -2186,6 +2386,7 @@
       '<label class="field full">Name above financial statements<input id="s-owner" value="' + esc(book.ownerName || '') + '" placeholder="e.g. ABC Company Store or Maria Santos" maxlength="80"></label>' +
       '<label class="field">Theme<select id="s-theme"><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>' +
       '</div></div>' +
+      syncCardHTML() +
       '<div class="card"><h2>Backup &amp; restore</h2>' +
       '<p class="small muted">Your data is stored only on this device. A backup is one file with everything — accounts, cards, people and every transaction. Save it to Google Drive, Files or email, and use it to restore on a new phone, tablet or computer.</p>' +
       (backupDue() ? '<div class="notice warn">' + (lastBackupAt() ? 'You have changes since your last backup.' : 'You have not made a backup yet.') + '</div>' : '') +
@@ -2237,6 +2438,7 @@
       });
     };
     $('#s-code').onclick = openChangeCodeDialog;
+    bindSyncCard();
   }
 
   function download(name, text, type) { return saveFile(name, text, type); }
@@ -2375,6 +2577,8 @@
   }
 
   applyTheme();
+  if (window.PundoSync) window.PundoSync.init(syncHooks);
   render();
+  updateSyncStatusViews();
   checkAutoRestore();
 })();

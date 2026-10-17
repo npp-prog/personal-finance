@@ -4,7 +4,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const out = path.join(root, 'www');
-const include = ['index.html', 'manifest.webmanifest', 'sw.js', 'privacy.html', 'css', 'js', 'icons', 'assets/favicon.png', 'assets/logo-mark.png'];
+const include = ['index.html', 'manifest.webmanifest', 'sw.js', 'privacy.html', 'delete-account.html', 'css', 'js', 'vendor', 'icons', 'assets/favicon.png', 'assets/logo-mark.png'];
 
 fs.rmSync(out, { recursive: true, force: true });
 for (const item of include) {

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "942596972707",
+    "project_id": "pundo-app",
+    "storage_bucket": "pundo-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:942596972707:android:685a1018b4d3424583df16",
+        "android_client_info": {
+          "package_name": "org.mgocandoniaccounting.pundo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCP7F4BIL9y6-wTfhlY2iXfmlNeiY8yZO4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

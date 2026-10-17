@@ -124,6 +124,18 @@ The **People** page tracks money that specific people owe you and money you owe 
 * **Restore from backup** shows what's inside the file (accounts, entries, the date it was made) before it replaces anything. Use it to move to a new phone, tablet or computer.
 * **Export transactions (CSV)** saves every journal line as a spreadsheet.
 
+## Sync across devices (sign-in)
+
+**Settings → Sync across devices**: create an account with your email and a password, then sign in on your other devices.
+* **What syncs:** every transaction, account, card, person and report setting, within a few seconds.
+* **Offline:** changes made offline are saved and sent when you're back online.
+* **Conflicts:** if the same entry is edited on two devices, the newest edit wins. Deletions reach every device.
+* **First sign-in on a device:** its existing data is **merged** into your account; nothing is deleted.
+* **Sign out:** your books stay on the device.
+* **Delete account:** removes your sign-in and all cloud data. It needs your security code and password.
+* **Backend:** Firebase Authentication and Cloud Firestore (project `pundo-app`). See [FIREBASE_SETUP.md](FIREBASE_SETUP.md). Security rules (`firestore.rules`) let each user read and write only their own data.
+* **Offline-only use:** without signing in, Pundo works fully offline as before. The cloud library loads only when you open the sync settings or are signed in.
+
 ## Security code
 
 Bulk changes need a **security code**: **Erase everything**, **Load sample data**, **Restore from backup** and **Import CSV**.

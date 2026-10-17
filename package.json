@@ -9,14 +9,16 @@
     "build": "node scripts/build-web.js",
     "android:sync": "npm run build && npx cap sync android",
     "android:icons": "npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#121214'",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "vendor": "node -e \"const fs=require('fs');fs.mkdirSync('vendor/firebase',{recursive:true});for(const f of ['app','auth','firestore'])fs.copyFileSync('node_modules/firebase/firebase-'+f+'-compat.js','vendor/firebase/firebase-'+f+'-compat.js')\""
   },
   "license": "MIT",
   "dependencies": {
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
-    "@capacitor/share": "^8.0.3"
+    "@capacitor/share": "^8.0.3",
+    "firebase": "^12.19.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.3",
