@@ -96,14 +96,10 @@ Every run gets a higher version code automatically, which Play requires for each
 Google Play needs a public link to a privacy policy.
 
 1. The support email in `privacy.html` and `delete-account.html` is already filled in (change it there if needed).
-2. Publish it using either option:
-   - **GitHub Pages:**
-     1. Go to **Settings → Pages → Deploy from a branch**, and choose this branch and `/ (root)`.
-     2. Your link will be `https://<your-github-username>.github.io/personal-finance/privacy.html`.
-     3. GitHub Pages on a private repository needs a paid GitHub plan.
-   - **Google Sites:** paste the same text into a free Google Sites page and use its link.
-
-As a bonus, GitHub Pages also hosts the web version of the app at `.../personal-finance/`.
+2. The pages are published from the separate public repository **npp-prog/pundo** (GitHub Pages, branch `main`, `/ (root)`), so this repository can stay private:
+   - Privacy policy: `https://npp-prog.github.io/pundo/privacy.html`
+   - Account deletion: `https://npp-prog.github.io/pundo/delete-account.html`
+3. When you change `privacy.html` or `delete-account.html` here, copy the same files to the **pundo** repository too.
 
 ## 5. Set up Google Play Console
 
@@ -141,11 +137,11 @@ Answer the Data safety form like this once the sign-in version is live:
 |---|---|
 | Does your app collect or share user data? | **Yes**, it collects data. It doesn't share it. |
 | Is all collected data encrypted in transit? | **Yes** |
-| Can users request that their data be deleted? | **Yes**. Give the URL of `delete-account.html`, hosted the same way as the privacy policy |
+| Can users request that their data be deleted? | **Yes**. Give `https://npp-prog.github.io/pundo/delete-account.html` |
 | Data types: **Personal info → Email address** | Collected; required for sign-in; purpose: *Account management*; not shared |
 | Data types: **Financial info → Other financial info** (the user's own records) | Collected; optional (only with sync); purpose: *App functionality*; not shared |
 
-Also, under **App content → Account deletion**, give the same `delete-account.html` link, and note that accounts can also be deleted in the app (*Settings → Sync across devices → Delete account*).
+Also, under **App content → Account deletion**, give the same `https://npp-prog.github.io/pundo/delete-account.html` link, and note that accounts can also be deleted in the app (*Settings → Sync across devices → Delete account*).
 
 ## 6. Releasing updates
 
