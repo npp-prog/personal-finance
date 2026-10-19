@@ -134,7 +134,7 @@ The **People** page tracks money that specific people owe you and money you owe 
 * **Sign out:** your books stay on the device.
 * **Delete account:** removes your sign-in and all cloud data. It needs your security code and password.
 * **Backend:** Firebase Authentication and Cloud Firestore (project `pundo-app`). See [FIREBASE_SETUP.md](FIREBASE_SETUP.md). Security rules (`firestore.rules`) let each user read and write only their own data.
-* **Subscription:** sync costs ₱50/month through Google Play; everything else is free. The `checkSubscription` Cloud Function (`functions/`) verifies purchases, and the rules only allow uploads while the subscription is active. See [BILLING_SETUP.md](BILLING_SETUP.md).
+* **Subscription:** sync is free for the first 3 months, then ₱25/month through Google Play; everything else is free. The `checkSubscription` Cloud Function (`functions/`) verifies purchases, and the rules only allow uploads while the subscription is active. See [BILLING_SETUP.md](BILLING_SETUP.md).
 * **Offline-only use:** without signing in, Pundo works fully offline as before. The cloud library loads only when you open the sync settings or are signed in.
 
 ## Security code

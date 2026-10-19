@@ -119,12 +119,24 @@ public class PundoBillingPlugin extends Plugin implements PurchasesUpdatedListen
 
     private interface ProductCallback { void got(ProductDetails details); }
 
-    /** The base plan (no free trial or intro offer), or the first offer if there is no plain base plan. */
+    /**
+     * The offer to sell: a free trial if Google Play says this user is eligible (Play only lists
+     * offers the user qualifies for), otherwise the plain base plan.
+     */
     private static ProductDetails.SubscriptionOfferDetails offerOf(ProductDetails d) {
         List<ProductDetails.SubscriptionOfferDetails> offers = d.getSubscriptionOfferDetails();
         if (offers == null || offers.isEmpty()) return null;
+        for (ProductDetails.SubscriptionOfferDetails o : offers) if (trialPhase(o) != null) return o;
         for (ProductDetails.SubscriptionOfferDetails o : offers) if (o.getOfferId() == null) return o;
         return offers.get(0);
+    }
+
+    /** The free first phase of an offer, or null if the offer has no free trial. */
+    private static ProductDetails.PricingPhase trialPhase(ProductDetails.SubscriptionOfferDetails o) {
+        List<ProductDetails.PricingPhase> phases = o.getPricingPhases().getPricingPhaseList();
+        if (phases.size() < 2) return null;
+        ProductDetails.PricingPhase first = phases.get(0);
+        return first.getPriceAmountMicros() == 0 ? first : null;
     }
 
     @PluginMethod
@@ -141,6 +153,8 @@ public class PundoBillingPlugin extends Plugin implements PurchasesUpdatedListen
                 out.put("price", recurring.getFormattedPrice());
                 out.put("period", recurring.getBillingPeriod());
                 out.put("basePlanId", offer.getBasePlanId());
+                ProductDetails.PricingPhase trial = trialPhase(offer);
+                if (trial != null) out.put("trialPeriod", trial.getBillingPeriod());
             }
             call.resolve(out);
         });

@@ -2321,7 +2321,7 @@
     if (!u) {
       return head +
         '<p class="small muted">Sign in to keep your books in sync on your phone, tablet and computer. Your data is stored in your own private space in the cloud; only you can read it. Without signing in, Pundo keeps working offline on this device.</p>' +
-        (S.requiresSubscription() || (window.PUNDO_SUBSCRIPTION && window.PUNDO_SUBSCRIPTION.required) ? '<p class="small"><b>Cloud sync is ' + esc(price || 'a paid add-on') + ' a month</b> (subscribe after signing in). Everything else in Pundo is free.</p>' : '') +
+        (S.requiresSubscription() || (window.PUNDO_SUBSCRIPTION && window.PUNDO_SUBSCRIPTION.required) ? '<p class="small"><b>Cloud sync is ' + esc(price || 'a paid add-on') + ' a month' + (S.trialText() ? ', free for the first ' + esc(S.trialText()) + ' for new subscribers' : '') + '</b> (subscribe after signing in). Everything else in Pundo is free.</p>' : '') +
         '<button class="google-btn" id="sy-google"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg><span>Continue with Google</span></button>' +
         '<div class="or-line"><span>or use email</span></div>' +
         '<div class="form-grid"><label class="field">Email<input id="sy-email" type="email" autocomplete="email" inputmode="email"></label>' +
@@ -2348,13 +2348,30 @@
     }
     if (S.status().state === 'checking') return '<p class="small muted">Checking your subscription…</p>';
     const buy = S.canPurchase()
-      ? '<div class="btn-row" style="margin-top:10px"><button class="primary" id="sy-buy">Subscribe — <span id="sy-price">' + esc(price) + '</span> / month</button><button id="sy-restore">Restore purchase</button></div>' +
-        '<p class="small muted" style="margin-top:8px">Billed monthly through Google Play and renews automatically until you cancel. Cancel anytime in Google Play → Payments &amp; subscriptions → Subscriptions; sync keeps working until the end of the month you paid for.</p>'
+      ? '<div class="btn-row" style="margin-top:10px"><button class="primary" id="sy-buy">' + subscribeLabel(price, null) + '</button><button id="sy-restore">Restore purchase</button></div>' +
+        '<p class="small muted" style="margin-top:8px" id="sy-terms">' + subscribeTerms(price, null) + '</p>'
       : '<p class="small muted" style="margin-top:8px">Subscribe in the Pundo Android app (Settings &amp; backup → Sync across devices), then sign in here with the same account.</p>' +
         '<div class="btn-row" style="margin-top:10px"><button id="sy-restore">I already subscribed — check again</button></div>';
-    return '<div class="notice sub-box" style="margin:10px 0"><b>Cloud sync — ' + esc(price || 'paid add-on') + ' a month</b>' +
+    return '<div class="notice sub-box" style="margin:10px 0"><b id="sy-head">Cloud sync — ' + esc(price || 'paid add-on') + ' a month</b>' +
       '<p class="small" style="margin:6px 0 0">Sync is paused for this account. Your books stay safe on this device and every other Pundo feature keeps working for free.</p>' +
       '<div id="sy-err" class="notice err hidden" style="margin-top:10px"></div>' + buy + '</div>';
+  }
+
+  // Google Play reports a free trial only to users who can still get one ("P3M" = 3 months).
+  function periodText(iso) {
+    const m = /^P(\d+)([DWMY])$/.exec(iso || '');
+    if (!m) return '';
+    const n = +m[1];
+    return n + ' ' + { D: 'day', W: 'week', M: 'month', Y: 'year' }[m[2]] + (n === 1 ? '' : 's');
+  }
+  function subscribeLabel(price, trial) {
+    return trial ? 'Start free trial — ' + esc(trial) : 'Subscribe — ' + esc(price) + ' / month';
+  }
+  function subscribeTerms(price, trial) {
+    const cancel = 'Cancel anytime in Google Play → Payments &amp; subscriptions → Subscriptions';
+    return trial
+      ? 'Free for ' + esc(trial) + ', then ' + esc(price) + ' a month, billed through Google Play and renewing automatically until you cancel. ' + cancel + ' before the trial ends and you won’t be charged.'
+      : 'Billed monthly through Google Play and renews automatically until you cancel. ' + cancel + '; sync keeps working until the end of the month you paid for.';
   }
 
   function bindSyncCard() {
@@ -2389,11 +2406,17 @@
       $('#sy-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#sy-signin').click(); });
     }
     if ($('#sy-buy')) {
-      S.getOffer().then((o) => { const el = $('#sy-price'); if (o && o.price && el) el.textContent = o.price; });
+      S.getOffer().then((o) => {
+        if (!o || !o.price || !$('#sy-buy')) return;
+        const trial = periodText(o.trialPeriod);
+        $('#sy-buy').innerHTML = subscribeLabel(o.price, trial);
+        $('#sy-terms').innerHTML = subscribeTerms(o.price, trial);
+        $('#sy-head').textContent = 'Cloud sync — ' + o.price + ' a month' + (trial ? ' · first ' + trial + ' free' : '');
+      });
       $('#sy-buy').onclick = busy($('#sy-buy'), 'Opening Google Play…', async () => {
         const r = await S.subscribe();
         if (r && r.pending) toast('Payment pending — sync starts once Google Play confirms it');
-        else if (r && r.active) { toast('Subscribed — syncing your books…'); rerender(); }
+        else if (r && r.active) { toast('Sync is on — syncing your books…'); rerender(); }
         else errBox('Google Play has not confirmed the subscription yet. Tap “Restore purchase” in a minute.');
       });
     }

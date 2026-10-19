@@ -1,8 +1,8 @@
-# Sync subscription (₱50/month): setup
+# Sync subscription (3 months free, then ₱25/month): setup
 
 Pundo is free. Cloud sync is a Google Play subscription:
 
-- **App:** shows **Subscribe — ₱50 / month** under *Settings & backup → Sync across devices* (`js/sync.js`, `android/.../PundoBillingPlugin.java`).
+- **App:** shows **Start free trial — 3 months** (or **Subscribe — ₱25 / month** for people who already used their trial) under *Settings & backup → Sync across devices* (`js/sync.js`, `android/.../PundoBillingPlugin.java`).
 - **Server:** the `checkSubscription` Cloud Function (`functions/`) verifies each purchase with Google Play, acknowledges it, and writes `entitlements/{uid}`.
 - **Database rules:** `firestore.rules` only allow uploads while `entitlements/{uid}.activeUntil` is in the future. Reading and deleting your own data never needs a subscription.
 - **Free access:** `functions/free-access.json` lists accounts that sync for free: the Google Play review account and the owner. Edit it and redeploy to change.
@@ -30,9 +30,17 @@ Google only lets you create subscriptions after a build with Play Billing is upl
    - **Type:** Auto-renewing
    - **Billing period:** 1 month
    - **Grace period:** leave the default
-   - **Price:** click **Set prices**, choose **Philippines → PHP 50.00**, and let Google convert other countries. You can also type an amount for each country.
+   - **Price:** click **Set prices**, choose **Philippines → PHP 25.00**, and let Google convert other countries. You can also type an amount for each country.
 4. **Save**, then **Activate** the base plan.
-5. **Testers who should not be charged:** **Settings → License testing** → add their Gmail addresses. Their purchases are free test purchases that renew every few minutes and stop after six renewals.
+5. **Add the 3-month free trial.** On the subscription page click **Add offer**:
+   - **Base plan:** `monthly`
+   - **Offer ID:** `free-trial-3m`
+   - **Eligibility:** **New customer acquisition → Never had this subscription** (one trial per Google account)
+   - **Phases → Add phase → Free trial**, duration **3 months**
+   - **Save**, then **Activate** the offer.
+
+   The app finds the trial automatically. Google only shows it to people who haven't had it yet, and everyone else sees the plain ₱25/month.
+6. **Testers who should not be charged:** **Settings → License testing** → add their Gmail addresses. Their purchases are free test purchases that renew every few minutes and stop after six renewals.
 
 ## 4. Let the server check purchases
 
@@ -89,14 +97,14 @@ Without this, the app re-checks Google Play whenever access runs out, so renewal
 
 1. On a phone with a **license tester** Google account, install the closed-testing build.
 2. Sign in to Pundo with a test account. It should say **Sync paused — needs a subscription**.
-3. Tap **Subscribe — ₱50.00 / month**. Google Play shows a test card; buy.
+3. Tap **Start free trial — 3 months**. Google Play shows the trial and a test card; confirm. (For license testers, trials and renewals are shortened to minutes.)
 4. The card changes to **Sync subscription active** and the books upload.
 5. Sign in with the same account on another device or a browser. It syncs without paying again.
 6. The review account `pundo.review@gmail.com` and the owner's Google account show **Cloud sync is included free**.
 
 ## Changing the price later
 
-Change it in Play Console (subscription → base plan → prices). Also update `"price"` in `js/firebase-config.js`: it's only the fallback text shown before Google Play's price loads.
+Change it in Play Console (subscription → base plan → prices; the trial is the offer). Also update `"price"` and `"trial"` in `js/firebase-config.js`: they're only text shown before Google Play's real offer loads and in the signed-out pitch. Raising the price later needs existing subscribers to accept the increase (Google emails them).
 
 ## Play Console forms to update
 

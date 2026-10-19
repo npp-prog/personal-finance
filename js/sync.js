@@ -473,6 +473,7 @@
     /** True in the Android app, where Google Play purchases are possible. */
     canPurchase: () => !!billing(),
     priceText: () => subConfig().price,
+    trialText: () => subConfig().trial || '',
     /** Price from Google Play (formatted in the user's currency), or null. */
     async getOffer() {
       const b = billing(); if (!b) return null;

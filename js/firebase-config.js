@@ -20,10 +20,13 @@ window.PUNDO_FIREBASE_CONFIG = {
  * Cloud sync is a paid add-on (Google Play subscription). The rest of Pundo is free.
  * required: false switches the paywall off (everyone who signs in can sync; firestore.rules must
  * then also allow it). productId must match the subscription created in Play Console.
+ * price and trial are only display text for before Google Play's real offer loads (and for the
+ * signed-out pitch); what users pay is set in Play Console.
  */
 window.PUNDO_SUBSCRIPTION = {
   "required": true,
   "productId": "pundo_sync",
-  "price": "₱50",
+  "price": "₱25",
+  "trial": "3 months",
   "functionsRegion": "asia-southeast1"
 };
