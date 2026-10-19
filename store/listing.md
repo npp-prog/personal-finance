@@ -19,7 +19,7 @@ ENCODE LIKE A BANK REGISTER
 ALL YOUR ACCOUNTS, YOUR TRUE NET WORTH
 • Debit cards, bank and e-wallet accounts as cash; credit cards and loans as liabilities
 • Investments, real estate, vehicles and other assets, revalued to market value whenever you like
-• Net worth trend on the dashboard
+• Home screen with net worth, monthly income and expenses, and your cards in a wallet
 
 WHO OWES YOU, AND WHOM YOU OWE
 • Track receivables and payables person by person

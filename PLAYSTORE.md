@@ -165,7 +165,7 @@ npm run android:open    # opens Android Studio → Build → Generate Signed App
 
 | Feature | In the Android app |
 |---|---|
-| Back button | Closes an open dialog or menu, goes back a page, and exits from the Dashboard |
+| Back button | Closes an open dialog or menu, goes back a page, and exits from Home |
 | Export backup, Export CSV | Open Android's share sheet, so you can save to Files or Drive, or email the file |
 | Print / PDF | Shares the report as a page. Open it in Chrome, which offers to print or **Save as PDF** |
 | Data | Stored on the device inside the app, plus an automatic backup copy that Android saves to the user's Google account and restores on a new phone. **Back up now** gives you a file to keep yourself |

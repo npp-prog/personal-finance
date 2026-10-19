@@ -120,7 +120,7 @@ The **People** page tracks money that specific people owe you and money you owe 
   * Nothing to set up, as long as **Phone Settings → Google → Backup** is on.
   * The rules are in `android/app/src/main/res/xml/data_extraction_rules.xml`.
 * **Settings & backup → Back up now** saves one `.json` file with all your accounts, cards, people and transactions. On Android it opens the share sheet, so you can save it to Google Drive or Files, or email it.
-* The dashboard reminds you to back up if you never have, or if you've made changes and your last backup is more than a week old.
+* Home reminds you to back up if you never have, or if you've made changes and your last backup is more than a week old.
 * **Restore from backup** shows what's inside the file (accounts, entries, the date it was made) before it replaces anything. Use it to move to a new phone, tablet or computer.
 * **Export transactions (CSV)** saves every journal line as a spreadsheet.
 

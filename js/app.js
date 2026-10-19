@@ -615,13 +615,14 @@
    */
   function accountTile(a, balance, opts) {
     opts = opts || {};
+    const fmt = opts.format || money;
     const tag = opts.tag || 'a';
     const href = tag === 'a' ? ' href="#/register?account=' + a.id + '"' : '';
     const on = opts.selected ? ' on' : '';
     if (a.tileDesign === 'simple') {
       return '<' + tag + href + ' class="acct-tile' + on + (isHex(a.color) ? ' has-color' : '') + '"' + (isHex(a.color) ? ' style="--acct-color:' + a.color + '"' : '') + '>' +
         '<div class="small muted">' + esc(CLASS_LABEL[L.classify(a)]) + '</div><div class="nm">' + esc(displayName(a)) + '</div>' +
-        '<div class="bal">' + money(balance) + '</div></' + tag + '>';
+        '<div class="bal">' + fmt(balance) + '</div></' + tag + '>';
     }
     const c = isHex(a.color) ? a.color : defaultCardColor(a);
     // Pick the text colour with the higher contrast against the card colour.
@@ -630,8 +631,8 @@
     const isCard = a.subtype !== 'cash';
     const isCredit = L.classify(a) === 'credit_card';
     return '<' + tag + href + ' class="acct-tile cc cc-' + style + on + '" style="--c:' + c + ';--c2:' + shade(c, -0.45) + ';--c3:' + shade(c, 0.18) + ';--ink:' + ink + '" aria-label="' + esc(displayName(a)) + ', ' + (isCredit ? 'balance owed ' : 'balance ') + esc(money(balance)) + '">' +
-      '<div class="cc-top"><span class="cc-bank">' + esc(a.institution || a.name) + '</span><span class="cc-type">' + cardTypeLabel(a) + '</span></div>' +
-      '<div class="cc-mid">' + (isCard ? CHIP_SVG + NFC_SVG : WALLET_SVG) + '<span class="cc-bal"><span class="cc-bal-l">' + (isCredit ? 'Balance owed' : 'Balance') + '</span>' + money(balance) + '</span></div>' +
+      '<div class="cc-top"><span class="cc-bank">' + esc(a.institution || a.name) + '</span><span class="cc-type">' + cardTypeLabel(a) + '</span><span class="cc-top-bal">' + fmt(balance) + '</span></div>' +
+      '<div class="cc-mid">' + (isCard ? CHIP_SVG + NFC_SVG : WALLET_SVG) + '<span class="cc-bal"><span class="cc-bal-l">' + (isCredit ? 'Balance owed' : 'Balance') + '</span>' + fmt(balance) + '</span></div>' +
       '<div class="cc-num">' + (a.last4 ? '•••• •••• •••• ' + esc(a.last4) : esc(a.institution ? a.name : '')) + '</div>' +
       '<div class="cc-bottom"><span class="cc-holder nm">' + esc((a.holder || a.name).toUpperCase()) + '</span><span class="cc-net">' + esc(a.network || '') + '</span></div>' +
       '</' + tag + '>';
@@ -711,7 +712,8 @@
   // ---------------------------------------------------------------------------
 
   const routes = {
-    dashboard: renderDashboard,
+    home: renderHome,
+    dashboard: renderHome, // old links
     accounts: renderAccounts,
     register: (p) => renderRegister(p.get('account')),
     transactions: renderTransactions,
@@ -727,14 +729,15 @@
     const h = location.hash.replace(/^#\/?/, '');
     const [name, query] = h.split('?');
     const params = new URLSearchParams(query || '');
-    return { name: routes[name] ? name : 'dashboard', params };
+    return { name: routes[name] ? (name === 'dashboard' ? 'home' : name) : 'home', params };
   }
 
   function render() {
     const r = currentRoute();
     $$('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === r.name));
-    const tabFor = { dashboard: 'dashboard', register: 'register', people: 'people', statements: 'reports', ledger: 'reports' };
-    $$('.tabbar [data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === (tabFor[r.name] || 'menu')));
+    const tabFor = { home: 'home', register: 'register', people: 'people', statements: 'reports', ledger: 'reports' };
+    $$('.tabbar [data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === tabFor[r.name]));
+    $('#app').classList.toggle('on-home', r.name === 'home');
     const navLink = $('.nav a[data-route="' + r.name + '"]');
     $('#bar-title').textContent = navLink ? navLink.textContent.trim() : 'Pundo';
     $('#app').classList.remove('nav-open');
@@ -759,39 +762,72 @@
   }
   $('#side-toggle').addEventListener('click', () => { prefs.sidebarExpanded = !prefs.sidebarExpanded; savePrefs(); applySidebar(); });
   applySidebar();
-  $('#tab-menu').addEventListener('click', (e) => { e.preventDefault(); $('#app').classList.toggle('nav-open'); });
+  $('#tab-add').addEventListener('click', (e) => { e.preventDefault(); openTxDialog({}); });
   $('#scrim').addEventListener('click', () => $('#app').classList.remove('nav-open'));
 
   // ---------------------------------------------------------------------------
-  // Dashboard
+  // Home
   // ---------------------------------------------------------------------------
 
-  function renderDashboard() {
+  const homeState = { period: 'month' };
+  const EYE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0112 5c6.4 0 10 7 10 7a17.6 17.6 0 01-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.9 9.9 0 004.4-1"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg>';
+  const GEAR = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M2.5 12h3M18.5 12h3M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>';
+  const peso = (dir) => '<svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><circle cx="20" cy="20" r="17" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>' +
+    '<text x="20" y="26" text-anchor="middle" font-size="17" font-weight="800" fill="var(--accent)">' + esc(L.formatMoney(0, book.currency).replace(/[\d.,\s-]/g, '').slice(0, 1) || '₱') + '</text>' +
+    '<path d="' + (dir === 'in' ? 'M37 31h-9m0 0l3.5-3.5M28 31l3.5 3.5' : 'M27 31h9m0 0l-3.5-3.5M36 31l-3.5 3.5') + '" stroke="' + (dir === 'in' ? 'var(--pos)' : 'var(--neg)') + '" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  function greeting() {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  }
+
+  function renderHome() {
     const t = today();
+    const hide = !!prefs.hideAmounts;
+    const m = (c) => (hide ? '<span class="hidden-amt">' + esc(L.formatMoney(0, book.currency).replace(/[\d.,\s-]/g, '') || '₱') + ' ••••••</span>' : money(c));
     const bs = L.balanceSheet(book, t);
-    const ms = monthStart(t);
-    const is = L.incomeStatement(book, ms, t);
+    const from = homeState.period === 'year' ? t.slice(0, 4) + '-01-01' : monthStart(t);
+    const is = L.incomeStatement(book, from, t);
     const hasAccounts = book.accounts.some((a) => isBalanceSheet(a) && a.id !== 'acc_cash') || book.entries.length;
+    const d = new Date(t + 'T00:00:00');
+    const dateLine = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    const name = (prefs.greetName || '').trim();
 
-    const kpis =
-      '<div class="kpis">' +
-      kpi('Net worth', bs.netWorth, 'Assets − liabilities', true) +
-      kpi('Cash (bank, debit, cash)', bs.totals.cash, countOf('cash')) +
-      kpi('Investments', bs.totals.investments, countOf('investment')) +
-      kpi('Other assets', bs.totals.otherAssets + bs.totals.receivables, 'Property, vehicles, receivables') +
-      kpi('Liabilities', bs.totals.liabilities, money(bs.totals.creditCards) + ' on credit cards') +
-      '</div>';
+    const hero = '<section class="home-hero">' +
+      '<div class="hh-text"><div class="hh-date">' + esc(dateLine) + '</div><h1>' + greeting() + (name ? ', ' + esc(name) : '') + '!</h1>' +
+      '<div class="hh-sub">' + (book.ownerName ? esc(book.ownerName) + ' · ' : '') + 'As of ' + fmtDate(t) + (L.closedThrough(book) ? ' · closed through ' + fmtDate(L.closedThrough(book)) : '') + ' <span class="sync-pill" data-sync-status></span></div></div>' +
+      '<div class="hh-actions"><button class="round-btn" id="home-eye" aria-label="' + (hide ? 'Show amounts' : 'Hide amounts') + '" title="' + (hide ? 'Show amounts' : 'Hide amounts') + '">' + (hide ? EYE_OFF : EYE) + '</button>' +
+      '<a class="round-btn" href="#/settings" aria-label="Settings" title="Settings">' + GEAR + '</a></div></section>';
 
-    const month =
-      '<div class="card"><h2>This month</h2>' +
-      '<div class="kpis" style="margin-bottom:0">' +
-      kpi('Income', is.totalIncome, '') +
-      kpi('Expenses', is.totalExpenses, '') +
-      kpi('Net income', is.netIncome, is.savingsRate == null ? '' : 'Savings rate ' + Math.round(is.savingsRate * 100) + '%') +
-      '</div></div>';
+    const nw = '<section class="nw-card">' +
+      '<div class="nw-label">Net worth</div><div class="nw-value">' + m(bs.netWorth) + '</div>' +
+      '<div class="nw-pills"><a class="nw-pill" href="#/statements"><span>Assets</span><b>' + m(bs.totals.assets) + '</b></a>' +
+      '<a class="nw-pill" href="#/statements"><span>Liabilities</span><b>' + m(bs.totals.liabilities) + '</b></a></div>' +
+      '<div class="nw-foot"><span>Cash ' + m(bs.totals.cash) + '</span><span>Cards owed ' + m(bs.totals.creditCards) + '</span></div></section>';
+
+    const insights = '<section class="card insights"><div class="sec-head"><h2>Insights summary</h2><a href="#/statements" class="see-all">See all</a></div>' +
+      '<div class="ins-top"><b>' + (homeState.period === 'year' ? t.slice(0, 4) + ' so far' : esc(d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }))) + '</b>' +
+      '<select id="home-period" aria-label="Period"><option value="month"' + (homeState.period === 'month' ? ' selected' : '') + '>Monthly</option><option value="year"' + (homeState.period === 'year' ? ' selected' : '') + '>Yearly</option></select></div>' +
+      '<div class="ins-row">' + peso('in') + '<div><div class="ins-l">Total income</div><div class="ins-v">' + m(is.totalIncome) + '</div></div></div>' +
+      '<div class="ins-row">' + peso('out') + '<div><div class="ins-l">Total expenses</div><div class="ins-v">' + m(is.totalExpenses) + '</div></div></div>' +
+      '<div class="ins-net"><span>Net income' + (is.savingsRate == null ? '' : ' · saved ' + Math.round(is.savingsRate * 100) + '%') + '</span><b class="' + (is.netIncome < 0 ? 'neg' : 'pos') + '">' + m(is.netIncome) + '</b></div></section>';
+
+    const tiles = activeAccounts(isTileAccount);
+    const bals = L.balances(book, { to: t });
+    const view = prefs.walletView === 'grid' ? 'grid' : 'stack';
+    const tile = (a) => accountTile(a, bals.get(a.id).balance, { format: m });
+    const wallet = '<section class="wallet"><div class="sec-head"><h2>Wallet</h2><div class="seg" role="group" aria-label="Card view">' +
+      '<button data-wview="stack" class="' + (view === 'stack' ? 'on' : '') + '" aria-label="Stacked cards" title="Stacked cards"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>' +
+      '<button data-wview="grid" class="' + (view === 'grid' ? 'on' : '') + '" aria-label="Card grid" title="Card grid"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></button>' +
+      '</div><a href="#/accounts" class="see-all">See all</a></div>' +
+      (tiles.length
+        ? '<div class="' + (view === 'grid' ? 'wgrid' : 'wstack') + '">' + tiles.map(tile).join('') + '</div>'
+        : '<div class="empty small">Add your bank accounts, e-wallets and cards to see them here. <button class="link" id="home-add-acct">+ Add account / card</button></div>') +
+      '</section>';
 
     // Only plot months from the first recorded entry onward.
-    const firstDate = book.entries.reduce((d, e) => (!d || e.date < d ? e.date : d), null);
+    const firstDate = book.entries.reduce((dd, e) => (!dd || e.date < dd ? e.date : dd), null);
     let series = L.netWorthSeries(book, t, 12);
     if (firstDate) {
       const trimmed = series.filter((p) => p.date >= firstDate);
@@ -804,54 +840,36 @@
 
     const topExp = is.expenses.filter((r) => r.amount > 0).sort((a, b) => b.amount - a.amount).slice(0, 7);
     const maxExp = topExp.length ? topExp[0].amount : 0;
-    const spend = '<div class="card"><h2>Top spending this month</h2>' + (topExp.length
+    const spend = '<div class="card"><h2>Top spending ' + (homeState.period === 'year' ? 'this year' : 'this month') + '</h2>' + (topExp.length
       ? '<div class="bar-list">' + topExp.map((r) =>
-        '<div class="row"><span>' + esc(r.account.name) + '</span><span class="num">' + money(r.amount) + '</span>' +
+        '<div class="row"><span>' + esc(r.account.name) + '</span><span class="num">' + m(r.amount) + '</span>' +
         '<div class="track"><div class="fill" style="width:' + Math.max(2, (r.amount / maxExp) * 100) + '%"></div></div></div>').join('') + '</div>'
-      : '<div class="empty">No expenses recorded this month.</div>') + '</div>';
-
-    const groups = [
-      ['Bank, debit & cash', 'cash'], ['Credit cards', 'credit_card'], ['Investments', 'investment'],
-      ['Other assets', 'other_asset'], ['Loans', 'loan'],
-    ];
-    const bals = L.balances(book, { to: t });
-    const accountsCard = '<div class="card"><div class="page-head" style="margin-bottom:8px"><h2 style="margin:0">Accounts</h2><a href="#/accounts" class="small">Manage</a></div>' +
-      groups.map(([label, cls]) => {
-        const list = activeAccounts((a) => L.classify(a) === cls && !a.personId);
-        if (!list.length) return '';
-        return '<h3 style="margin-top:12px">' + label + '</h3><table><tbody>' + list.map((a) =>
-          '<tr class="click" data-href="#/transactions?account=' + a.id + '"><td>' + colorDot(a) + esc(a.name) +
-          (a.last4 ? ' <span class="muted">••' + esc(a.last4) + '</span>' : '') + '</td>' +
-          '<td class="num">' + money(bals.get(a.id).balance) + '</td></tr>').join('') + '</tbody></table>';
-      }).join('') + '</div>';
+      : '<div class="empty">No expenses recorded yet.</div>') + '</div>';
 
     const ppl = L.peopleSummary(book, t).filter((x) => x.net !== 0).sort((x, y) => Math.abs(y.net) - Math.abs(x.net));
-    const peopleCard = '<div class="card"><div class="page-head" style="margin-bottom:8px"><h2 style="margin:0">People</h2><a href="#/people" class="small">Open</a></div>' +
+    const peopleCard = '<div class="card"><div class="sec-head"><h2>People</h2><a href="#/people" class="see-all">See all</a></div>' +
       (ppl.length ? '<table><tbody>' + ppl.slice(0, 6).map((x) =>
         '<tr class="click" data-href="#/people?person=' + x.person.id + '"><td>' + esc(x.person.name) + '</td><td>' +
-        (x.net > 0 ? '<span class="badge cash">Owes you</span>' : '<span class="badge liab">You owe</span>') + '</td><td class="num">' + money(Math.abs(x.net)) + '</td></tr>').join('') + '</tbody></table>'
+        (x.net > 0 ? '<span class="badge cash">Owes you</span>' : '<span class="badge liab">You owe</span>') + '</td><td class="num">' + m(Math.abs(x.net)) + '</td></tr>').join('') + '</tbody></table>'
         : '<div class="empty small">No open receivables or payables. <a href="#/people">Add people</a> you lend to or borrow from.</div>') + '</div>';
 
-    main.innerHTML =
-      '<div class="page-head"><div><h1>Dashboard</h1><div class="sub">As of ' + fmtDate(t) +
-      (L.closedThrough(book) ? ' · Books closed through ' + fmtDate(L.closedThrough(book)) : '') + ' <span class="sync-pill" data-sync-status></span></div></div>' +
-      '<div class="btn-row"><button id="add-tx">+ Quick transaction</button><button id="add-acct">+ Account / card</button><a class="btn primary" href="#/register">Encode bank transactions</a></div></div>' +
+    main.innerHTML = '<div class="home">' + hero +
       (backupDue() ? '<div class="notice warn backup-nudge"><span>💾 ' + (lastBackupAt() ? 'You have changes since your last backup on ' + fmtDate(lastBackupAt().slice(0, 10)) + '.' : 'Your data is only on this device. Make a backup so you never lose it.') + '</span><button class="primary" id="dash-backup">Back up now</button></div>' : '') +
       (hasAccounts ? '' : '<div class="notice warn">Start by adding your bank accounts, debit and credit cards, investments and other assets — or load sample data in <a href="#/settings">Settings</a> to explore first.</div>') +
-      kpis +
-      '<div class="grid grid-2"><div>' + chart + month + peopleCard + '</div><div>' + accountsCard + spend + '</div></div>';
+      '<div class="home-grid"><div class="home-col">' + nw + insights + '</div><div class="home-col">' + wallet + '</div></div>' +
+      '<div class="quick-row"><button id="add-tx">+ Quick transaction</button><button id="add-acct">+ Account / card</button><a class="btn" href="#/register">Bank register</a><button id="home-upload">Bulk upload</button></div>' +
+      '<div class="grid grid-2"><div>' + chart + peopleCard + '</div><div>' + spend + '</div></div></div>';
 
     drawLineChart($('#nw-chart'), series);
     bindRowLinks();
     $('#add-tx').onclick = () => openTxDialog({});
     $('#add-acct').onclick = () => openAccountDialog();
+    $('#home-upload').onclick = () => openImportDialog(prefs.lastRegister && acct(prefs.lastRegister) ? prefs.lastRegister : '');
+    if ($('#home-add-acct')) $('#home-add-acct').onclick = () => openAccountDialog();
     if ($('#dash-backup')) $('#dash-backup').onclick = backupNow;
-
-    function kpi(label, cents, hint, hero) {
-      return '<div class="kpi' + (hero ? ' hero' : '') + '"><div class="label">' + esc(label) + '</div><div class="value">' +
-        money(cents) + '</div>' + (hint ? '<div class="hint">' + esc(hint) + '</div>' : '') + '</div>';
-    }
-    function countOf(cls) { const n = activeAccounts((a) => L.classify(a) === cls).length; return n + (n === 1 ? ' account' : ' accounts'); }
+    $('#home-eye').onclick = () => { prefs.hideAmounts = !prefs.hideAmounts; savePrefs(); rerender(); };
+    $('#home-period').onchange = (e) => { homeState.period = e.target.value; rerender(); };
+    $$('[data-wview]').forEach((b) => { b.onclick = () => { prefs.walletView = b.dataset.wview; savePrefs(); rerender(); }; });
   }
 
   function bindRowLinks(root) {
@@ -928,6 +946,16 @@
   // Accounts
   // ---------------------------------------------------------------------------
 
+  /** Agila-style wallet: net worth header and a grid of cash and card tiles. */
+  function walletSummary(t, bals) {
+    const bs = L.balanceSheet(book, t);
+    const tiles = activeAccounts(isTileAccount);
+    if (!tiles.length) return '';
+    return '<section class="nw-card wallet-head"><div class="nw-label">Net worth</div><div class="nw-value">' + money(bs.netWorth) + '</div>' +
+      '<div class="nw-pills"><div class="nw-pill"><span>Assets</span><b>' + money(bs.totals.assets) + '</b></div><div class="nw-pill"><span>Liabilities</span><b>' + money(bs.totals.liabilities) + '</b></div></div></section>' +
+      '<div class="wgrid wgrid-auto">' + tiles.map((a) => accountTile(a, bals.get(a.id).balance)).join('') + '</div>';
+  }
+
   function renderAccounts() {
     const t = today();
     const bals = L.balances(book, { to: t });
@@ -965,6 +993,7 @@
       '<div class="page-head"><div><h1>Accounts &amp; cards</h1><div class="sub">Debit cards and bank accounts are cash (assets), credit cards are liabilities, investments are investments.</div></div>' +
       '<div class="btn-row"><label class="small"><input type="checkbox" id="show-arch"' + (showArchived ? ' checked' : '') + '> Show archived</label>' +
       '<button class="primary" id="add-acct">+ Add account</button></div></div>' +
+      walletSummary(t, bals) +
       '<div class="grid grid-2">' +
       sections.map(([title, sub, pred]) => '<div class="card"><h2>' + title + ' <span class="small muted">· ' + sub + '</span></h2>' +
         table(pred, title === 'Investments' || title === 'Other assets') + '</div>').join('') +
@@ -2552,6 +2581,7 @@
       '<div class="grid grid-2">' +
       '<div class="card"><h2>Preferences</h2><div class="form-grid">' +
       '<label class="field">Currency code<input id="s-cur" value="' + esc(book.currency) + '" maxlength="3" placeholder="PHP, USD, EUR…"></label>' +
+      '<label class="field full">Your name (for the greeting on Home)<input id="s-greet" value="' + esc(prefs.greetName || '') + '" placeholder="e.g. Neil" maxlength="40" autocomplete="given-name"></label>' +
       '<label class="field full">Name above financial statements<input id="s-owner" value="' + esc(book.ownerName || '') + '" placeholder="e.g. ABC Company Store or Maria Santos" maxlength="80"></label>' +
       '<label class="field">Theme<select id="s-theme"><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>' +
       '</div></div>' +
@@ -2574,6 +2604,7 @@
       '</div>';
     $('#s-theme').value = prefs.theme || '';
     $('#s-owner').onchange = (e) => { book.ownerName = e.target.value.trim() || undefined; commit(); toast('Saved'); };
+    $('#s-greet').onchange = (e) => { prefs.greetName = e.target.value.trim(); savePrefs(); toast('Saved'); };
     $('#s-theme').onchange = (e) => { prefs.theme = e.target.value; savePrefs(); applyTheme(); };
     $('#s-cur').onchange = (e) => {
       const c = e.target.value.trim().toUpperCase();
@@ -2597,7 +2628,7 @@
     $('#s-sample').onclick = () => {
       requireCode('Load sample data', 'Replaces <b>all</b> your current data (' + book.entries.length + ' entries) with demo data. Back up first if you want to keep it.').then((ok) => {
         if (!ok) return;
-        book = sampleBook(); commit(); location.hash = '#/dashboard'; toast('Sample data loaded');
+        book = sampleBook(); commit(); location.hash = '#/home'; toast('Sample data loaded');
       });
     };
     $('#s-reset').onclick = () => {
@@ -2735,7 +2766,7 @@
     Native.App.addListener('backButton', ({ canGoBack }) => {
       if (dialog.open) { closeDialog(); return; }
       if ($('#app').classList.contains('nav-open')) { $('#app').classList.remove('nav-open'); return; }
-      if (canGoBack && currentRoute().name !== 'dashboard') window.history.back();
+      if (canGoBack && currentRoute().name !== 'home') window.history.back();
       else Native.App.exitApp();
     });
   }
