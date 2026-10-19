@@ -154,3 +154,10 @@ test('receivables and payables per person', () => {
   assert.equal(L.personAccounts(book, juan.id).receivable.name, 'Receivable – Juan dela Cruz');
   assert.throws(() => L.addPerson(book, 'mom'));
 });
+
+test('parseCSV detects tab and semicolon separators and strips a BOM', () => {
+  const L = require('../js/ledger.js');
+  assert.deepStrictEqual(L.parseCSV('Date\tDescription\tAmount\n2026-10-01\tJollibee, Makati\t-250'), [['Date', 'Description', 'Amount'], ['2026-10-01', 'Jollibee, Makati', '-250']]);
+  assert.deepStrictEqual(L.parseCSV('﻿Date;Desc\n01/10/2026;"A;B"'), [['Date', 'Desc'], ['01/10/2026', 'A;B']]);
+  assert.deepStrictEqual(L.parseCSV('a,b\n1,"x,y"'), [['a', 'b'], ['1', 'x,y']]);
+});

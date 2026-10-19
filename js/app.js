@@ -1153,7 +1153,7 @@
     main.innerHTML =
       '<div class="page-head"><div><h1>' + (a ? esc(a.name) : 'All transactions') + '</h1><div class="sub">' +
       (a ? esc(L.SUBTYPES[a.type][a.subtype] || '') + (a.institution ? ' · ' + esc(a.institution) : '') + (a.last4 ? ' ••' + esc(a.last4) : '') : 'Every entry across all your accounts and cards') + '</div></div>' +
-      '<div class="btn-row"><button id="import-csv">Import CSV</button><button id="add-je">Split entry</button><button class="primary" id="add-tx">+ Transaction</button></div></div>' +
+      '<div class="btn-row"><button id="import-csv">Bulk upload</button><button id="add-je">Split entry</button><button class="primary" id="add-tx">+ Transaction</button></div></div>' +
       '<div class="toolbar"><label class="field">Account / card<select id="tx-acct"><option value="">All accounts</option>' + accountOptions(accountId) + '</select></label>' +
       pt.html +
       '<label class="field">Type<select id="tx-kind"><option value="">All types</option>' +
@@ -1446,7 +1446,7 @@
 
     main.innerHTML =
       '<div class="page-head"><div><h1>Bank register</h1><div class="sub">Encode every line of your bank or card statement. Pick the account it belongs to — expense, income, another bank, a credit card, a loan, an asset — and the journal entry is made for you.</div></div>' +
-      '<div class="btn-row"><button id="reg-import">Import CSV</button><a class="btn" href="#/ledger?account=' + a.id + '">General ledger</a></div></div>' +
+      '<div class="btn-row"><button id="reg-import">Bulk upload</button><a class="btn" href="#/ledger?account=' + a.id + '">General ledger</a></div></div>' +
       strip +
       '<div class="card reg-card">' +
       '<div class="reg-head"><div><h2 style="margin:0">' + colorDot(a) + esc(displayName(a)) + ' <button class="link small" id="reg-edit-acct" title="Edit name, colour…">Edit</button></h2><div class="small muted">' + esc(L.SUBTYPES[a.type][a.subtype] || '') + (a.institution ? ' · ' + esc(a.institution) : '') +
@@ -1676,113 +1676,198 @@
   // CSV import
   // ---------------------------------------------------------------------------
 
+  // Amounts as banks write them: "1,234.50", "(250.00)", "PHP 1,000.00", "500.00 DR", "12,000.00 CR".
+  // DR / CR say the direction outright (DR = money out or a card charge, CR = money in or a payment).
+  function importAmount(v) {
+    let s = String(v == null ? '' : v).trim();
+    let dir = null;
+    const m = /\b(CR|DR)\.?$/i.exec(s);
+    if (m) { dir = m[1].toUpperCase() === 'CR' ? 'in' : 'out'; s = s.slice(0, m.index).trim(); }
+    s = s.replace(/^(PHP|USD|EUR|SGD|JPY|GBP|AUD|CAD|HKD)\s*/i, '').replace(/\s*(PHP|USD|EUR)$/i, '');
+    return { cents: s ? L.toCents(s) : NaN, dir };
+  }
+
+  // Bank files often start with a few lines (account name, period…) before the table.
+  function findHeaderRow(rows) {
+    for (let i = 0; i < Math.min(rows.length - 1, 30); i++) {
+      const filled = rows[i].filter((c) => String(c).trim()).length;
+      if (filled >= 2 && rows[i].some((c) => /date/i.test(c))) return i;
+    }
+    return 0;
+  }
+
+  async function readUploadRows(file, text) {
+    if (file && /\.xlsx$/i.test(file.name)) {
+      if (!window.PundoXlsx || typeof DecompressionStream === 'undefined') throw new Error('Excel files are not supported on this device. Save the file as CSV and upload that.');
+      return window.PundoXlsx.read(await file.arrayBuffer());
+    }
+    if (file && /\.xls$/i.test(file.name)) throw new Error('Old Excel (.xls) files can’t be read. Open it in Excel or Google Sheets and save as .xlsx or CSV.');
+    return L.parseCSV(file ? await file.text() : text || '');
+  }
+
+  function uploadTemplate() {
+    const exp = book.accounts.find((x) => x.type === 'expense' && !x.system && !x.archived);
+    const inc = book.accounts.find((x) => x.type === 'income' && !x.system && !x.archived);
+    const rows = [
+      ['Date', 'Description', 'Money out', 'Money in', 'Category', 'Memo', 'Reference'],
+      [today(), 'Grocery store', '1250.00', '', exp ? exp.name : 'Groceries', '', ''],
+      [today(), 'Salary', '', '35000.00', inc ? inc.name : 'Salary', '', ''],
+    ];
+    download('pundo-upload-template.csv', rows.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv');
+  }
+
   function openImportDialog(accountId) {
     let rows = null;
+    let parsed = null;
     const step1 = () => {
-      showDialog('Import transactions from CSV',
+      dialog.classList.remove('wide');
+      showDialog('Bulk upload transactions',
+        '<p class="small muted" style="margin-top:0">Download your statement from your bank or card’s website or app as <b>CSV</b> or <b>Excel (.xlsx)</b>, then upload it here. You can also copy the rows from Excel or Google Sheets and paste them below. You’ll check every row before anything is saved.</p>' +
         '<div class="form-grid">' +
         '<label class="field full">Into account / card<select id="i-acct">' + accountOptions(accountId, isBalanceSheet, { placeholder: 'Choose…' }) + '</select></label>' +
-        '<label class="field full">CSV file<input id="i-file" type="file" accept=".csv,text/csv,text/plain"></label>' +
-        '<label class="field full">…or paste CSV text<textarea id="i-text" rows="7" placeholder="Date,Description,Amount&#10;2026-10-01,Grocery store,-54.20&#10;2026-10-02,Salary,2500.00"></textarea></label>' +
-        '</div>',
+        '<label class="field full">Statement file (CSV or Excel)<input id="i-file" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>' +
+        '<label class="field full">…or paste rows<textarea id="i-text" rows="6" placeholder="Date,Description,Amount&#10;2026-10-01,Grocery store,-1250.00&#10;2026-10-02,Salary,35000.00"></textarea></label>' +
+        '</div>' +
+        '<p class="small muted">No file from your bank? <button class="link" data-act="template">Download a template</button>, fill it in Excel or Google Sheets, and upload it.</p>',
         ['', '<button data-act="cancel">Cancel</button><button class="primary" data-act="next">Next</button>']);
       dialogAction('cancel', closeDialog);
+      dialogAction('template', uploadTemplate);
       dialogAction('next', async () => {
         accountId = $('#i-acct', dialog).value;
-        if (!accountId) return dialogError('Choose the account these transactions belong to.');
-        const f = $('#i-file', dialog).files[0];
-        const text = f ? await f.text() : $('#i-text', dialog).value;
-        rows = L.parseCSV(text || '');
+        if (!accountId) return dialogError('Choose the account or card these transactions belong to.');
+        let all;
+        try { all = await readUploadRows($('#i-file', dialog).files[0], $('#i-text', dialog).value); }
+        catch (err) { return dialogError(err.message); }
+        rows = all.slice(findHeaderRow(all));
         if (rows.length < 2) return dialogError('Need a header row and at least one transaction.');
         step2();
       });
     };
     const step2 = () => {
+      dialog.classList.remove('wide');
       const header = rows[0];
-      const guess = (re) => header.findIndex((h) => re.test(h));
+      const guess = (re, not) => header.findIndex((h) => re.test(h) && !(not && not.test(h)));
       const g = {
-        date: guess(/date|posted/i), desc: guess(/desc|payee|merchant|details|name|narrat|memo/i),
-        amount: guess(/^amount$|amount|amt/i), debit: guess(/debit|withdraw|out|charge/i), credit: guess(/credit|deposit|in$|payment/i),
-        cat: guess(/categ/i),
+        date: guess(/date|posted/i), desc: guess(/desc|payee|merchant|details|particular|transaction|name|narrat/i, /date|code|ref/i),
+        amount: guess(/amount|amt/i, /balance/i), debit: guess(/debit|withdraw|money out|^out|charge/i), credit: guess(/credit|deposit|money in|in$|payment/i, /card/i),
+        cat: guess(/categ|account/i), memo: guess(/memo|note|remark/i), ref: guess(/ref|check|cheque|^no\.?$/i),
       };
-      const useSplit = g.amount < 0 && g.debit >= 0 && g.credit >= 0;
+      if (g.desc < 0) g.desc = guess(/memo/i);
+      const useSplit = g.debit >= 0 && g.credit >= 0 && g.debit !== g.credit;
       const colSel = (id, sel, optional) => '<select id="' + id + '">' + (optional ? '<option value="-1">(none)</option>' : '') +
         header.map((h, i) => '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + esc(h || 'Column ' + (i + 1)) + '</option>').join('') + '</select>';
       const a = acct(accountId);
-      showDialog('Map CSV columns',
+      const liab = a.type === 'liability';
+      showDialog('Match the columns',
         '<div class="form-grid">' +
         '<label class="field">Date column' + colSel('m-date', g.date) + '</label>' +
         '<label class="field">Date format<select id="m-dfmt"><option value="mdy">Month/Day/Year</option><option value="dmy">Day/Month/Year</option></select></label>' +
         '<label class="field full">Description column' + colSel('m-desc', g.desc) + '</label>' +
-        '<label class="field full">Amount layout<select id="m-layout"><option value="single"' + (useSplit ? '' : ' selected') + '>One amount column</option><option value="split"' + (useSplit ? ' selected' : '') + '>Separate money-out and money-in columns</option></select></label>' +
+        '<label class="field full">Amount layout<select id="m-layout"><option value="single"' + (useSplit ? '' : ' selected') + '>One amount column</option><option value="split"' + (useSplit ? ' selected' : '') + '>Separate money-out and money-in (debit / credit) columns</option></select></label>' +
         '<label class="field single">Amount column' + colSel('m-amt', g.amount >= 0 ? g.amount : 0) + '</label>' +
-        '<label class="field single">Positive amounts mean<select id="m-sign"><option value="in">' + (a.type === 'liability' ? 'Payment / refund (reduces balance)' : 'Money in') + '</option><option value="out"' + (a.type === 'liability' ? ' selected' : '') + '>' + (a.type === 'liability' ? 'Charge (increases balance)' : 'Money out') + '</option></select></label>' +
-        '<label class="field split">Money-out / charges column' + colSel('m-out', g.debit, true) + '</label>' +
-        '<label class="field split">Money-in / payments column' + colSel('m-in', g.credit, true) + '</label>' +
+        '<label class="field single">Positive amounts mean<select id="m-sign"><option value="in">' + (liab ? 'Payment / refund (reduces balance)' : 'Money in') + '</option><option value="out"' + (liab ? ' selected' : '') + '>' + (liab ? 'Charge (increases balance)' : 'Money out') + '</option></select></label>' +
+        '<label class="field split">' + (liab ? 'Charges' : 'Money-out / debit') + ' column' + colSel('m-out', g.debit, true) + '</label>' +
+        '<label class="field split">' + (liab ? 'Payments / credits' : 'Money-in / credit') + ' column' + colSel('m-in', g.credit, true) + '</label>' +
         '<label class="field">Category column (optional)' + colSel('m-cat', g.cat, true) + '</label>' +
+        '<label class="field">Memo column (optional)' + colSel('m-memo', g.memo, true) + '</label>' +
+        '<label class="field">Reference no. column (optional)' + colSel('m-ref', g.ref, true) + '</label>' +
         '<label class="field">Skip duplicates<select id="m-dupe"><option value="1">Yes (same date, amount &amp; description)</option><option value="0">No</option></select></label>' +
-        '</div><p class="small muted" style="margin-top:10px">Categories are matched by name, then by past transactions with the same description; anything else goes to “Uncategorized” so you can fix it later.</p>' +
+        '</div><p class="small muted" style="margin-top:10px">Categories are matched by name (any account, card, person or category), then by past transactions with the same description. You can change each one on the next screen.</p>' +
         '<div id="m-preview" class="small"></div>',
-        ['<button data-act="back">Back</button>', '<button data-act="cancel">Cancel</button><button class="primary" data-act="import">Import</button>']);
+        ['<button data-act="back">Back</button>', '<button data-act="cancel">Cancel</button><button class="primary" data-act="review">Review</button>']);
       const layout = () => {
         const split = $('#m-layout', dialog).value === 'split';
         $$('.single', dialog).forEach((el) => el.classList.toggle('hidden', split));
         $$('.split', dialog).forEach((el) => el.classList.toggle('hidden', !split));
-        preview();
-      };
-      const preview = () => {
-        const parsed = parseRows();
-        $('#m-preview', dialog).innerHTML = '<div class="notice ' + (parsed.ok.length ? 'ok' : 'warn') + '" style="margin-top:10px">' +
-          parsed.ok.length + ' transactions ready' + (parsed.dupes ? ', ' + parsed.dupes + ' duplicates skipped' : '') + (parsed.bad ? ', ' + parsed.bad + ' rows unreadable' : '') + '.</div>' +
-          (parsed.ok.length ? '<table><tbody>' + parsed.ok.slice(0, 5).map((x) => '<tr><td>' + x.date + '</td><td>' + esc(x.description) + '</td><td>' + esc(acctName(x.counterId)) + '</td><td class="num ' + (x.direction === 'in' ? 'pos' : 'neg') + '">' + (x.direction === 'in' ? '+' : '−') + money(x.amount) + '</td></tr>').join('') + '</tbody></table>' : '');
+        const r = parseRows();
+        $('#m-preview', dialog).innerHTML = '<div class="notice ' + (r.ok.length ? 'ok' : 'warn') + '" style="margin-top:10px">' +
+          r.ok.length + ' transactions found' + (r.dupes ? ', ' + r.dupes + ' already in Pundo (skipped)' : '') + (r.bad ? ', ' + r.bad + ' rows without a date or amount (skipped)' : '') + '.</div>';
       };
       const parseRows = () => {
         const idx = (id) => +$(id, dialog).value;
         const dayFirst = $('#m-dfmt', dialog).value === 'dmy';
         const split = $('#m-layout', dialog).value === 'split';
         const posIsIn = $('#m-sign', dialog).value === 'in';
-        const catIdx = idx('#m-cat');
+        const cell = (r, id) => (idx(id) >= 0 ? String(r[idx(id)] == null ? '' : r[idx(id)]).trim() : '');
         const memory = buildCategoryMemory();
         const byName = {};
-        book.accounts.forEach((x) => { if (x.type === 'income' || x.type === 'expense') byName[x.name.toLowerCase()] = x; });
+        book.accounts.forEach((x) => { if (x.id !== accountId && !x.archived) byName[x.name.toLowerCase()] = x; });
         const existing = new Set(L.register(book, accountId).map((r) => r.entry.date + '|' + Math.abs(r.delta) + '|' + (r.entry.description || '').toLowerCase()));
         const skipDupes = $('#m-dupe', dialog).value === '1';
         const out = { ok: [], bad: 0, dupes: 0 };
         for (const r of rows.slice(1)) {
-          const date = L.parseDate(r[idx('#m-date')], dayFirst);
+          const date = L.parseDate(cell(r, '#m-date'), dayFirst);
           let signed;
           if (split) {
-            const o = idx('#m-out') >= 0 ? L.toCents(r[idx('#m-out')] || '') : NaN;
-            const i = idx('#m-in') >= 0 ? L.toCents(r[idx('#m-in')] || '') : NaN;
+            const o = importAmount(cell(r, '#m-out')).cents;
+            const i = importAmount(cell(r, '#m-in')).cents;
             signed = (isNaN(i) ? 0 : Math.abs(i)) - (isNaN(o) ? 0 : Math.abs(o));
           } else {
-            const v = L.toCents(r[idx('#m-amt')]);
-            signed = isNaN(v) ? NaN : posIsIn ? v : -v;
+            const v = importAmount(cell(r, '#m-amt'));
+            signed = isNaN(v.cents) ? NaN : v.dir ? (v.dir === 'in' ? 1 : -1) * Math.abs(v.cents) : posIsIn ? v.cents : -v.cents;
           }
           if (!date || !signed || isNaN(signed)) { out.bad++; continue; }
-          const description = (r[idx('#m-desc')] || '').trim();
+          const description = cell(r, '#m-desc');
           const direction = signed > 0 ? 'in' : 'out';
           const amount = Math.abs(signed);
           if (skipDupes && existing.has(date + '|' + amount + '|' + description.toLowerCase())) { out.dupes++; continue; }
-          let counter = catIdx >= 0 ? byName[(r[catIdx] || '').trim().toLowerCase()] : null;
+          let counter = byName[cell(r, '#m-cat').toLowerCase()] || null;
           if (!counter && memory[description.toLowerCase()]) counter = acct(memory[description.toLowerCase()]);
           if (!counter) counter = acct(direction === 'in' ? 'inc_uncat' : 'exp_uncat') ||
             book.accounts.find((x) => x.type === (direction === 'in' ? 'income' : 'expense'));
-          out.ok.push({ date, description, direction, amount, counterId: counter.id });
+          out.ok.push({ date, description, direction, amount, counterId: counter.id, memo: cell(r, '#m-memo') || undefined, ref: cell(r, '#m-ref') || undefined });
         }
         return out;
       };
-      $$('select', dialog).forEach((s) => s.addEventListener('change', layout));
+      $$('select', dialog).forEach((el) => el.addEventListener('change', layout));
       layout();
       dialogAction('back', step1);
       dialogAction('cancel', closeDialog);
+      dialogAction('review', () => {
+        parsed = parseRows().ok;
+        if (!parsed.length) return dialogError('No transactions found — check the date and amount columns.');
+        step3();
+      });
+    };
+    const step3 = () => {
+      const uncat = (id) => id === 'inc_uncat' || id === 'exp_uncat';
+      const opts = accountOptions(null, (x) => x.id !== accountId);
+      showDialog('Review ' + parsed.length + ' transactions',
+        '<p class="small muted" style="margin-top:0">Into <b>' + esc(acctName(accountId)) + '</b>. Pick the right category for each row (another card or account makes it a transfer; a person records what they owe you or you owe them). Untick rows you don’t want.</p>' +
+        '<div class="btn-row" style="margin-bottom:10px"><span class="small">Set every <b>Uncategorized</b> row to</span><select id="rv-bulk"><option value="">Choose…</option>' + opts + '</select></div>' +
+        '<div class="table-wrap rv-wrap"><table class="rv-table"><thead><tr><th><input type="checkbox" id="rv-all" checked aria-label="Select all"></th><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr></thead><tbody>' +
+        parsed.map((x, i) => '<tr data-i="' + i + '"' + (uncat(x.counterId) ? ' class="rv-uncat"' : '') + '><td><input type="checkbox" class="rv-on" checked aria-label="Include"></td><td class="nowrap">' + fmtDate(x.date) + '</td><td>' + esc(x.description || '—') + (x.memo ? '<div class="small muted">' + esc(x.memo) + '</div>' : '') + '</td>' +
+          '<td class="num nowrap ' + (x.direction === 'in' ? 'pos' : 'neg') + '">' + (x.direction === 'in' ? '+' : '−') + money(x.amount) + '</td><td><select class="rv-cat" aria-label="Category"></select></td></tr>').join('') +
+        '</tbody></table></div><p class="small" id="rv-count"></p>',
+        ['<button data-act="back">Back</button>', '<button data-act="cancel">Cancel</button><button class="primary" data-act="import">Import</button>']);
+      dialog.classList.add('wide');
+      $$('.rv-cat', dialog).forEach((sel, i) => { sel.innerHTML = opts; sel.value = parsed[i].counterId; });
+      const count = () => {
+        const on = $$('.rv-on', dialog).filter((c) => c.checked).length;
+        const left = $$('tbody tr', dialog).filter((tr) => $('.rv-on', tr).checked && uncat($('.rv-cat', tr).value)).length;
+        $('#rv-count', dialog).textContent = on + ' of ' + parsed.length + ' selected' + (left ? ' · ' + left + ' still Uncategorized (you can fix them later too)' : '');
+        $('[data-act="import"]', dialog).textContent = 'Import ' + on;
+      };
+      $$('.rv-cat', dialog).forEach((sel) => sel.addEventListener('change', () => { sel.closest('tr').classList.toggle('rv-uncat', uncat(sel.value)); count(); }));
+      $$('.rv-on', dialog).forEach((c) => c.addEventListener('change', count));
+      $('#rv-all', dialog).addEventListener('change', (e) => { $$('.rv-on', dialog).forEach((c) => { c.checked = e.target.checked; }); count(); });
+      $('#rv-bulk', dialog).addEventListener('change', (e) => {
+        if (!e.target.value) return;
+        $$('.rv-cat', dialog).forEach((sel) => { if (uncat(sel.value)) { sel.value = e.target.value; sel.closest('tr').classList.remove('rv-uncat'); } });
+        e.target.value = ''; count();
+      });
+      count();
+      dialogAction('back', step2);
+      dialogAction('cancel', () => { dialog.classList.remove('wide'); closeDialog(); });
       dialogAction('import', async () => {
-        const parsed = parseRows();
-        if (!parsed.ok.length) return dialogError('Nothing to import — check the column mapping.');
-        const ok = await requireCode('Import ' + parsed.ok.length + ' transactions', 'Into <b>' + esc(acctName(accountId)) + '</b> from your CSV file.');
+        const chosen = $$('tbody tr', dialog).filter((tr) => $('.rv-on', tr).checked)
+          .map((tr) => Object.assign({}, parsed[+tr.dataset.i], { counterId: $('.rv-cat', tr).value }));
+        if (!chosen.length) return dialogError('Tick at least one transaction.');
+        dialog.classList.remove('wide');
+        const ok = await requireCode('Import ' + chosen.length + ' transactions', 'Into <b>' + esc(acctName(accountId)) + '</b> from your statement.');
         if (!ok) return;
         let n = 0; const errs = [];
-        for (const x of parsed.ok) {
+        for (const x of chosen) {
           try { L.postEntry(book, L.simpleEntry(book, Object.assign({ accountId }, x))); n++; }
           catch (err) { errs.push(x.date + ': ' + err.message); }
         }
@@ -2628,7 +2713,7 @@
   }
   function dialogAction(act, fn) { const b = $('[data-act="' + act + '"]', dialog); if (b) b.onclick = fn; }
   function dialogError(msg) { const el = $('#dlg-err', dialog); el.textContent = msg; el.classList.remove('hidden'); el.scrollIntoView({ block: 'nearest' }); }
-  function closeDialog() { dialog.close(); dialog.innerHTML = ''; }
+  function closeDialog() { dialog.close(); dialog.innerHTML = ''; dialog.classList.remove('wide'); }
 
   dialog.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'file') {

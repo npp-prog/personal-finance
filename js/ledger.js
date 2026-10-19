@@ -773,7 +773,17 @@
   // CSV import
   // ---------------------------------------------------------------------------
 
-  function parseCSV(text) {
+  /**
+   * Parses CSV, semicolon-separated or tab-separated text (rows copied from Excel or Google Sheets
+   * paste as tab-separated). The separator is detected from the first line unless given.
+   */
+  function parseCSV(text, sep) {
+    text = String(text || '').replace(/^\uFEFF/, '');
+    if (!sep) {
+      const first = (text.match(/^[^\r\n]*/) || [''])[0].replace(/"[^"]*"/g, '');
+      const count = (c) => first.split(c).length - 1;
+      sep = count('\t') ? '\t' : count(';') > count(',') ? ';' : ',';
+    }
     const rows = [];
     let row = [], field = '', q = false;
     for (let i = 0; i < text.length; i++) {
@@ -783,7 +793,7 @@
           if (text[i + 1] === '"') { field += '"'; i++; } else q = false;
         } else field += c;
       } else if (c === '"') q = true;
-      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === sep) { row.push(field); field = ''; }
       else if (c === '\n' || c === '\r') {
         if (c === '\r' && text[i + 1] === '\n') i++;
         row.push(field); field = '';
